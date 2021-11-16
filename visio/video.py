@@ -1,14 +1,17 @@
+import pyvirtualcam
 import torch
 import cv2
 import numpy as np
 import subprocess
 import time
+import mediapipe as mp
 
 from typing import Union
 from torchvision.transforms.functional import to_tensor
 from dataclasses import dataclass
 
 from detect.face import MPSimpleFaceDetector
+from visio.utils import ColorMap
 import pyfakewebcam
 
 # FFMPEG BACKEND
@@ -102,31 +105,64 @@ class GreenScreenCuda:
 
 
 def rvm_test():
-    gs = GreenScreenCuda()
+    # gs = GreenScreenCuda()
+    mp_selfie_segmentation = mp.solutions.selfie_segmentation
+
     cap = WebCamCV2()
     det = MPSimpleFaceDetector()
-    fake_camera = pyfakewebcam.FakeWebcam('/dev/video2', 1280, 720)
-    with torch.no_grad():
-        while True:
-            st = time.time()
-            success, frame = cap.read()
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            bboxes = det.get_face_bbox(frame)
-            if len(bboxes):
-                x_0, y_0, x_1, y_1 = bboxes[0]
-            if success:
-                result = gs.mix(frame)
-                if len(bboxes) > 0:
-                    result = result[0, int(y_0): int(y_1), int(x_0): int(x_1), :]
-                    result = np.concatenate([result, np.flip(result, axis=1)], axis=1)
-                else:
-                    result = result[0]
-                h, w = result.shape[:2]
-                fake_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-                fake_frame[:h, :w, :] = result
-                fake_camera.schedule_frame(fake_frame)
-                #cap.show(result)
-            print(round(1 / (time.time() - st)))
-            if cv2.waitKey(1) & 0xFF == 27:
-                cap.release()
-                break
+    segm = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+
+    cmap = ColorMap('inferno')
+
+    BG_COLOR = (0, 0, 0)
+
+    #fake_camera = pyfakewebcam.FakeWebcam('/dev/video2', 1280, 720)
+    with pyvirtualcam.Camera(width=1280, height=720, fps=30) as fake_camera:
+        with torch.no_grad():
+            while True:
+                st = time.time()
+                success, frame = cap.read()
+                frame = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
+                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                frame.flags.writeable = False
+                bboxes = det.get_face_bbox(frame)
+                res_segm = segm.process(frame)
+                condition = np.stack(
+                    (res_segm.segmentation_mask,) * 3, axis=-1) > 0.1
+
+                cond_gray = res_segm.segmentation_mask > 0.1
+                _, xs = np.nonzero(cond_gray)
+                min_x = np.min(xs)
+                max_x = np.max(xs)
+
+                cute = cmap.process_grad_grayscale(gray, min_x, max_x)
+
+                #print(res_segm.segmentation_mask > 0.1)
+
+                frame.flags.writeable = True
+                if len(bboxes):
+                    x_0, y_0, x_1, y_1 = bboxes[0]
+                if success:
+                    result = frame
+                    # bg_image = np.zeros(frame.shape, dtype=np.uint8)
+                    bg_image = np.zeros_like(gray, dtype=np.uint8)
+                    #bg_image[:] = BG_COLOR
+                    result = np.where(cond_gray, gray, bg_image)
+                    # result = np.where(condition, result, bg_image)
+                    # result = gs.mix(frame)
+                    # if len(bboxes) > 0:
+                    #     result = result[int(y_0): int(y_1), int(x_0): int(x_1), :]
+                    #     result = np.concatenate([result, np.flip(result, axis=1)], axis=1)
+                    # else:
+                    #     result = result[0]
+                    h, w = result.shape[:2]
+                    #fake_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+                    #fake_frame[:h, :w, :] = result
+                    #fake_camera.send(fake_frame)
+                    #fake_camera.sleep_until_next_frame()
+                    #fake_camera.schedule_frame(fake_frame)
+                    cap.show(cute)
+                print(round(1 / (time.time() - st)))
+                if cv2.waitKey(1) & 0xFF == 27:
+                    cap.release()
+                    break

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 class ColorMap:
     def __init__(self, cmap='bwr'):
         """TABLE SHAPE IS 256 x 3"""
-        self.table, self.cmap, self.palette = self._get_table(cmap)
+        self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
 
     @staticmethod
     def _get_table(cmap):
@@ -15,12 +15,39 @@ class ColorMap:
         cm = plt.get_cmap(cmap)
         colored_image = cm(image)
         colored_image = (colored_image[:, :, :3] * 255).astype(np.uint8)
+        colored_hsv = cv2.cvtColor(colored_image, cv2.COLOR_RGB2HSV)
+        table_hsv = colored_hsv[:, 0]
         table = colored_image[:, 0]
         table = [tuple(col) for col in table]
-        return table, cmap, cm
+        return table, cmap, cm, table_hsv
 
     def set_color_map(self, cmap):
-        self.table, self.cmap, self.palette = self._get_table(cmap)
+        self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
+
+    def process_grad_grayscale(self, gray, min_x, max_x):
+        gray = (gray / 255.)[:, min_x: max_x + 1]
+        all_points = np.linspace(0, 255, (max_x - min_x + 1), dtype=np.uint8)[np.newaxis, :]
+        colored_image = self.palette(all_points)
+        colored_image = (colored_image[:, :, :3] * 255).astype(np.uint8)
+        colored_hsv = cv2.cvtColor(colored_image, cv2.COLOR_RGB2HSV)
+        print(colored_hsv[0, :, 1])
+        new_v = (colored_hsv[..., 2] * gray).astype(np.uint8)
+        print(new_v.shape)
+        print(colored_hsv.shape)
+        result = np.zeros(gray.shape + (3,), dtype=np.uint8)
+        result[..., 2] = new_v
+        result[:, :, 0] = colored_hsv[:, :, 0][:, None]
+        result[:, :, 1] = colored_hsv[:, :, 1][:, None]
+        # result[:, :, 1] = 255 * (colored_hsv[:, :, 1][:, None] > 0)
+        # INVERSION
+        # result[..., 1] = new_v
+        # result[:, :, 0] = colored_hsv[:, :, 0][:, None]
+        # result[:, :, 2] = colored_hsv[:, :, 2][:, None]
+
+        #print(colored_hsv)
+        #result[:, :, 1] = colored_hsv[:, :, 1][:, None]
+        print(result.shape)
+        return cv2.cvtColor(result, cv2.COLOR_HSV2RGB)
 
     def __getitem__(self, item):
         if isinstance(item, np.ndarray):
