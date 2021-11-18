@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 from detect.face import MPSimpleFaceDetector
 from visio.utils import ColorMap
+
+from visio.text import draw_text_image
 import pyfakewebcam
 
 # FFMPEG BACKEND
@@ -112,9 +114,23 @@ def rvm_test():
     det = MPSimpleFaceDetector()
     segm = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
 
-    cmap = ColorMap('inferno')
+    cmap = ColorMap('nipy_spectral')
+
+    WIDTH, HEIGHT = 1280, 720
+    #
+    # mask = np.ones((HEIGHT, WIDTH, 1), dtype=np.uint8)
+    # mask[::4, ...] *= 0
+    # mask[:, ::4, :] *= 0
+    # mask.flags.writeable = False
 
     BG_COLOR = (0, 0, 0)
+    i = 0
+
+    t_w, t_h = 400, 100
+    img, _ = draw_text_image((t_w, t_h), 'COLOR SCHEMA')
+    img = np.array(img)
+    img_text = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    img_text.flags.writeable = False
 
     #fake_camera = pyfakewebcam.FakeWebcam('/dev/video2', 1280, 720)
     with pyvirtualcam.Camera(width=1280, height=720, fps=30) as fake_camera:
@@ -135,7 +151,20 @@ def rvm_test():
                 min_x = np.min(xs)
                 max_x = np.max(xs)
 
+                if i % 1 == 0:
+                    index = np.array(np.random.randint(0, WIDTH, 15, dtype=np.int32))
+                i += 1
+                gray[:, index] = np.random.randint(0, 255, (1,), dtype=np.uint8)
+
+                gray[HEIGHT//2:HEIGHT//2 + t_h, WIDTH//2:WIDTH//2 + t_w] = img_text
+
                 cute = cmap.process_grad_grayscale(gray, min_x, max_x)
+                cute[::4] = 0
+                cute[:, ::4] = 0
+                # if i % 1 == 0:
+                #     index = np.array(np.random.randint(0, WIDTH, 15, dtype=np.int32))
+                # i += 1
+                # cute[:, index] = np.random.randint(0, 255, (3,), dtype=np.uint8)
 
                 #print(res_segm.segmentation_mask > 0.1)
 

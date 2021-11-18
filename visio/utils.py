@@ -24,20 +24,32 @@ class ColorMap:
     def set_color_map(self, cmap):
         self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
 
-    def process_grad_grayscale(self, gray, min_x, max_x):
-        gray = (gray / 255.)[:, min_x: max_x + 1]
-        all_points = np.linspace(0, 255, (max_x - min_x + 1), dtype=np.uint8)[np.newaxis, :]
+    def process_grad_grayscale(self, gray, min_x, max_x, axis=1, inverted=False, sqrt=False):
+        h, w = np.shape(gray)
+        dim_size = w if axis else h
+        if sqrt:
+            gray = np.sqrt(gray / 255.)  #[:, min_x: max_x + 1]
+        else:
+            gray = gray / 255.
+        all_grad_points = np.linspace(0, 255, (max_x - min_x + 1), dtype=np.uint8)
+        left_border = np.zeros((min_x, ), dtype=np.uint8)
+        right_border = 255 * np.ones((max(dim_size - max_x - 1, 0), ), dtype=np.uint8)
+        all_points = np.concatenate([left_border, all_grad_points, right_border])
+        if inverted:
+            all_points = np.flip(all_points)
+        if axis == 1:
+            all_points = all_points[np.newaxis, :]
+        else:
+            all_points = all_points[:, np.newaxis]
+
         colored_image = self.palette(all_points)
         colored_image = (colored_image[:, :, :3] * 255).astype(np.uint8)
         colored_hsv = cv2.cvtColor(colored_image, cv2.COLOR_RGB2HSV)
-        print(colored_hsv[0, :, 1])
         new_v = (colored_hsv[..., 2] * gray).astype(np.uint8)
-        print(new_v.shape)
-        print(colored_hsv.shape)
         result = np.zeros(gray.shape + (3,), dtype=np.uint8)
         result[..., 2] = new_v
-        result[:, :, 0] = colored_hsv[:, :, 0][:, None]
-        result[:, :, 1] = colored_hsv[:, :, 1][:, None]
+        result[:, :, :2] = colored_hsv[:, :, :2][:, None, :]
+        # result[:, :, 1] = colored_hsv[:, :, 1][:, None]
         # result[:, :, 1] = 255 * (colored_hsv[:, :, 1][:, None] > 0)
         # INVERSION
         # result[..., 1] = new_v
@@ -46,7 +58,7 @@ class ColorMap:
 
         #print(colored_hsv)
         #result[:, :, 1] = colored_hsv[:, :, 1][:, None]
-        print(result.shape)
+        #print(result.shape)
         return cv2.cvtColor(result, cv2.COLOR_HSV2RGB)
 
     def __getitem__(self, item):
