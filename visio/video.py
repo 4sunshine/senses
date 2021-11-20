@@ -190,15 +190,10 @@ def rvm_test():
 
                 cond_gray = res_segm.segmentation_mask > 0.1
                 _, xs = np.nonzero(cond_gray)
-                min_x = np.min(xs)
-                max_x = np.max(xs)
-
-
-
-                # if i % 1 == 0:
-                #     index = np.array(np.random.randint(0, WIDTH, 15, dtype=np.int32))
-                # i += 1
-                # gray[:, index] = np.random.randint(0, 255, (1,), dtype=np.uint8)
+                if len(xs):
+                    min_x, max_x = np.min(xs), np.max(xs)
+                else:
+                    min_x, max_x = 0, WIDTH - 1
 
                 gray = random_lines.transform(gray)
 
@@ -206,17 +201,7 @@ def rvm_test():
 
                 cute = gradient_color.transform(gray, endpoints=(min_x, max_x))
 
-                #cute = cmap.process_grad_grayscale(gray, min_x, max_x)
-
                 cute = grid_lines.transform(cute)
-                # cute[::4] = 0
-                # cute[:, ::4] = 0
-                # if i % 1 == 0:
-                #     index = np.array(np.random.randint(0, WIDTH, 15, dtype=np.int32))
-                # i += 1
-                # cute[:, index] = np.random.randint(0, 255, (3,), dtype=np.uint8)
-
-                #print(res_segm.segmentation_mask > 0.1)
 
                 frame.flags.writeable = True
                 if len(bboxes):
