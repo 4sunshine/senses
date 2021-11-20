@@ -24,9 +24,17 @@ class ColorMap:
     def set_color_map(self, cmap):
         self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
 
-    def process_grad_grayscale(self, gray, min_x, max_x, axis=1, invert=False, sqrt=False, flip=False):
+    def process_grad_grayscale(self, gray, endpoints=None, axis=1, invert=False, sqrt=False, flip=False):
+        if len(gray.shape) == 3:
+            gray = cv2.cvtColor(gray, cv2.COLOR_RGB2GRAY)
         h, w = np.shape(gray)
         dim_size = w if axis else h
+        if not endpoints:
+            min_x, max_x = 0, dim_size - 1
+        else:
+            min_x, max_x = endpoints
+            min_x = min(max(0, min_x), dim_size - 1)
+            max_x = min(max(0, max_x), dim_size - 1)
         if sqrt:
             gray = np.sqrt(gray / 255.)  #[:, min_x: max_x + 1]
         else:

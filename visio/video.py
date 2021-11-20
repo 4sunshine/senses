@@ -14,73 +14,108 @@ from detect.face import MPSimpleFaceDetector
 from visio.utils import ColorMap
 
 from visio.text import draw_text_image
+from visio.filters import *
 import pyfakewebcam
-
-# FFMPEG BACKEND
-class WebCam:
-    def __init__(self, width=1280, height=720, fps=25):
-        ffmpg_cmd = [
-            'ffmpeg',
-            # FFMPEG_BIN,
-            '-f', 'video4linux2',
-            '-input_format', 'mjpeg',
-            '-framerate', f'{fps}',
-            '-video_size', f'{width}x{height}',
-            '-i', '/dev/video0',
-            '-pix_fmt', 'bgr24',  # opencv requires bgr24 pixel format
-            '-an', '-sn',  # disable audio processing
-            '-vcodec', 'rawvideo',
-            '-f', 'image2pipe',
-            '-',  # output to go to stdout
-        ]
-        self.h = height
-        self.w = width
-        self.read_amount = height * width * 3
-        self.process = subprocess.Popen(ffmpg_cmd, stdout=subprocess.PIPE, bufsize=10**8)
-
-    def get_frame(self, flip=True, rgb=True):
-        # transform the bytes read into a numpy array
-        frame = np.frombuffer(self.process.stdout.read(self.read_amount), dtype=np.uint8)
-        frame = frame.reshape((self.h, self.w, 3))  # height, width, channels
-        self.process.stdout.flush()
-        if flip and rgb:
-            return cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
-        elif flip and not rgb:
-            return cv2.flip(frame, 1)
-        else:
-            return frame
-
-    def close(self):
-        self.process.terminate()
 
 
 @dataclass
-class WebCamDefaults:
+class VideoDefaults:
     input_id: int = 0
     window_name: str = 'video_input'
     width: int = 1280
     height: int = 720
     window_position: Union[int, int] = (600, 0)
+    flip: bool = False
+    file: str = ''
+    fps: int = 25
+    rgb: bool = True
 
 
-class WebCamCV2:
-    def __init__(self, cfg=WebCamDefaults()):
-        self.cap = cv2.VideoCapture(cfg.input_id)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, cfg.width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cfg.height)
-        self.window_name = cfg.window_name
-        cv2.namedWindow(cfg.window_name)
-        self._x, self._y = cfg.window_position
+class VideoInput(object):
+    def __init__(self, cfg=VideoDefaults()):
+        self.cfg = cfg
+        self.window_name = self.cfg.window_name
+        cv2.namedWindow(self.window_name)
+        self._x, self._y = self.cfg.window_position
 
     def read(self):
-        return self.cap.read()
+        pass
+
+    def close(self):
+        cv2.destroyAllWindows()
 
     def show(self, image):
         cv2.moveWindow(self.window_name, self._x, self._y)
         cv2.imshow(self.window_name, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 
-    def release(self):
+
+# FFMPEG BACKEND
+class FFMPEGWebCam(VideoInput):
+    def __init__(self, cfg=VideoDefaults()):
+        super().__init__(cfg)
+        ffmpg_cmd = [
+            'ffmpeg',
+            # FFMPEG_BIN,
+            '-f', 'video4linux2',
+            '-input_format', 'mjpeg',
+            '-framerate', f'{self.cfg.fps}',
+            '-video_size', f'{self.cfg.width}x{self.cfg.height}',
+            '-i', f'/dev/video{self.cfg.input_id}',
+            '-pix_fmt', 'bgr24',  # opencv requires bgr24 pixel format # TODO: override from config RGB
+            '-an', '-sn',  # disable audio processing
+            '-vcodec', 'rawvideo',
+            '-f', 'image2pipe',
+            '-',  # output to go to stdout
+        ]
+        self.read_amount = self.cfg.height * self.cfg.width * 3
+        self.process = subprocess.Popen(ffmpg_cmd, stdout=subprocess.PIPE, bufsize=10**8)
+
+    def read(self):
+        # transform the bytes read into a numpy array
+        frame = np.frombuffer(self.process.stdout.read(self.read_amount), dtype=np.uint8)
+        frame = frame.reshape((self.cfg.height, self.cfg.width, 3))  # height, width, channels
+        self.process.stdout.flush()
+        if not self.cfg.flip and self.cfg.rgb:
+            return True, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        elif self.cfg.flip and self.cfg.rgb:
+            return True, cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
+        elif self.cfg.flip and not self.cfg.rgb:
+            return True, cv2.flip(frame, 1)
+        else:
+            return True, frame
+
+    def close(self):
+        cv2.destroyAllWindows()
+        self.process.terminate()
+
+
+class CV2WebCam(VideoInput):
+    def __init__(self, cfg=VideoDefaults()):
+        super().__init__(cfg)
+        self.cfg = cfg
+        self.cap = cv2.VideoCapture(self.cfg.input_id)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
+        self.window_name = self.cfg.window_name
+        cv2.namedWindow(self.window_name)
+        self._x, self._y = self.cfg.window_position
+
+    def read(self):
+        success, frame = self.cap.read()
+        if success:
+            if not self.cfg.flip and self.cfg.rgb:
+                return success, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            elif self.cfg.flip and self.cfg.rgb:
+                return success, cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
+            elif self.cfg.flip and not self.cfg.rgb:
+                return success, cv2.flip(frame, 1)
+            else:
+                return success, frame
+        else:
+            return success, frame
+
+    def close(self):
         cv2.destroyAllWindows()
         self.cap.release()
 
@@ -106,11 +141,14 @@ class GreenScreenCuda:
         return com.mul(255).byte().cpu().permute(0, 2, 3, 1).numpy()
 
 
+
+
+
 def rvm_test():
     # gs = GreenScreenCuda()
     mp_selfie_segmentation = mp.solutions.selfie_segmentation
 
-    cap = WebCamCV2()
+    cap = CV2WebCam()
     det = MPSimpleFaceDetector()
     segm = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
 
@@ -132,6 +170,10 @@ def rvm_test():
     img_text = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     img_text.flags.writeable = False
 
+    random_lines = RandomVerticalLines()
+    gradient_color = GrayScaleGradientColorizeFilter()
+    grid_lines = ColoredGridFilter()
+
     #fake_camera = pyfakewebcam.FakeWebcam('/dev/video2', 1280, 720)
     with pyvirtualcam.Camera(width=1280, height=720, fps=30) as fake_camera:
         with torch.no_grad():
@@ -151,16 +193,24 @@ def rvm_test():
                 min_x = np.min(xs)
                 max_x = np.max(xs)
 
-                if i % 1 == 0:
-                    index = np.array(np.random.randint(0, WIDTH, 15, dtype=np.int32))
-                i += 1
-                gray[:, index] = np.random.randint(0, 255, (1,), dtype=np.uint8)
+
+
+                # if i % 1 == 0:
+                #     index = np.array(np.random.randint(0, WIDTH, 15, dtype=np.int32))
+                # i += 1
+                # gray[:, index] = np.random.randint(0, 255, (1,), dtype=np.uint8)
+
+                gray = random_lines.transform(gray)
 
                 gray[HEIGHT//2:HEIGHT//2 + t_h, WIDTH//2:WIDTH//2 + t_w] = img_text
 
-                cute = cmap.process_grad_grayscale(gray, min_x, max_x)
-                cute[::4] = 0
-                cute[:, ::4] = 0
+                cute = gradient_color.transform(gray, endpoints=(min_x, max_x))
+
+                #cute = cmap.process_grad_grayscale(gray, min_x, max_x)
+
+                cute = grid_lines.transform(cute)
+                # cute[::4] = 0
+                # cute[:, ::4] = 0
                 # if i % 1 == 0:
                 #     index = np.array(np.random.randint(0, WIDTH, 15, dtype=np.int32))
                 # i += 1
