@@ -24,7 +24,7 @@ class ColorMap:
     def set_color_map(self, cmap):
         self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
 
-    def process_grad_grayscale(self, gray, min_x, max_x, axis=1, inverted=False, sqrt=False):
+    def process_grad_grayscale(self, gray, min_x, max_x, axis=1, invert=False, sqrt=False, flip=False):
         h, w = np.shape(gray)
         dim_size = w if axis else h
         if sqrt:
@@ -35,7 +35,7 @@ class ColorMap:
         left_border = np.zeros((min_x, ), dtype=np.uint8)
         right_border = 255 * np.ones((max(dim_size - max_x - 1, 0), ), dtype=np.uint8)
         all_points = np.concatenate([left_border, all_grad_points, right_border])
-        if inverted:
+        if flip:
             all_points = np.flip(all_points)
         if axis == 1:
             all_points = all_points[np.newaxis, :]
@@ -47,18 +47,14 @@ class ColorMap:
         colored_hsv = cv2.cvtColor(colored_image, cv2.COLOR_RGB2HSV)
         new_v = (colored_hsv[..., 2] * gray).astype(np.uint8)
         result = np.zeros(gray.shape + (3,), dtype=np.uint8)
-        result[..., 2] = new_v
-        result[:, :, :2] = colored_hsv[:, :, :2][:, None, :]
-        # result[:, :, 1] = colored_hsv[:, :, 1][:, None]
-        # result[:, :, 1] = 255 * (colored_hsv[:, :, 1][:, None] > 0)
-        # INVERSION
-        # result[..., 1] = new_v
-        # result[:, :, 0] = colored_hsv[:, :, 0][:, None]
-        # result[:, :, 2] = colored_hsv[:, :, 2][:, None]
 
-        #print(colored_hsv)
-        #result[:, :, 1] = colored_hsv[:, :, 1][:, None]
-        #print(result.shape)
+        if not invert:
+            result[..., 2] = new_v
+            result[:, :, :2] = colored_hsv[:, :, :2][:, None, :]
+        else:
+            result[..., 1] = new_v
+            result[:, :, [0, 2]] = colored_hsv[:, :, [0, 2]][:, None]
+
         return cv2.cvtColor(result, cv2.COLOR_HSV2RGB)
 
     def __getitem__(self, item):
@@ -401,8 +397,6 @@ def create_gallery(images, centers=None, target_size=(1040, 1040), n_cols=3,
         y_tl = spacing + (s_y + spacing) * (i // n_cols)
         img = Image.fromarray(img, 'RGB')
         gallery.paste(img, (x_tl, y_tl))
-
-    gallery.save('test_gallery.png')
 
 
 def convert_hex_to_rgb(hex_val):
