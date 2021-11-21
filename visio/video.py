@@ -11,6 +11,7 @@ from torchvision.transforms.functional import to_tensor
 from dataclasses import dataclass
 
 from detect.face import MPSimpleFaceDetector
+from detect.hands import MPHandsDetector, MPPoseDetector
 from visio.utils import ColorMap
 
 from visio.text import draw_text_image
@@ -25,7 +26,7 @@ class VideoDefaults:
     width: int = 1280
     height: int = 720
     window_position: Union[int, int] = (600, 0)
-    flip: bool = False
+    flip: bool = True
     file: str = ''
     fps: int = 25
     rgb: bool = True
@@ -210,8 +211,11 @@ def rvm_test():
 
     random_lines = RandomVerticalLines()
     gradient_color = GrayScaleGradientColorizeFilter()
-    grid_lines = ColoredGridFilter()
+    grid_lines = ColorGridFilter()
     writer = AVStreamWriter()
+
+    hd = MPHandsDetector()
+    pd = MPPoseDetector()
 
     #fake_camera = pyfakewebcam.FakeWebcam('/dev/video2', 1280, 720)
     # with pyvirtualcam.Camera(width=1280, height=720, fps=30) as fake_camera:
@@ -219,10 +223,14 @@ def rvm_test():
         while True:
             st = time.time()
             success, frame = cap.read()
-            frame = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
+            #frame = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
             gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
             frame.flags.writeable = False
-            bboxes = det.get_face_bbox(frame)
+            #bboxes = det.get_face_bbox(frame)
+            if i % 2 == 0:
+                hd.detect(frame)
+            i += 1
+            #pd.detect(frame)
             res_segm = segm.process(frame)
             condition = np.stack(
                 (res_segm.segmentation_mask,) * 3, axis=-1) > 0.1
@@ -243,8 +251,8 @@ def rvm_test():
             cute = grid_lines.transform(cute)
 
             frame.flags.writeable = True
-            if len(bboxes):
-                x_0, y_0, x_1, y_1 = bboxes[0]
+            # if len(bboxes):
+            #     x_0, y_0, x_1, y_1 = bboxes[0]
             if success:
                 # result = frame
                 # # bg_image = np.zeros(frame.shape, dtype=np.uint8)

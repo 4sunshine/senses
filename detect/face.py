@@ -68,3 +68,6 @@ class MPSimpleFaceDetector:
                 bboxes.append(bbox)
         return bboxes
 
+    def close(self):
+        self._detector.close()
+

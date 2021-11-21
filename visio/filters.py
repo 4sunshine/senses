@@ -23,7 +23,7 @@ class BaseFilter(object):
 
 
 @dataclass
-class ColoredGridFilterDefaults:
+class ColorGridFilterDefaults:
     color: Union[int, int, int] = (0, 0, 0)
     step_x: int = 4
     step_y: int = 4
@@ -31,8 +31,8 @@ class ColoredGridFilterDefaults:
     apply_y: bool = True
 
 
-class ColoredGridFilter(BaseFilter):
-    def __init__(self, cfg=ColoredGridFilterDefaults()):
+class ColorGridFilter(BaseFilter):
+    def __init__(self, cfg=ColorGridFilterDefaults()):
         super().__init__(cfg)
 
     def transform(self, image, *args, **kwargs):
