@@ -29,6 +29,8 @@ class VideoDefaults:
     file: str = ''
     fps: int = 25
     rgb: bool = True
+    audio_device: str = 'hw:2,0'
+    output_filename: str = 'out.mp4'
 
 
 class VideoInput(object):
@@ -141,7 +143,43 @@ class GreenScreenCuda:
         return com.mul(255).byte().cpu().permute(0, 2, 3, 1).numpy()
 
 
+class AVStreamWriter:
+    def __init__(self, cfg=VideoDefaults()):
+        command = ['ffmpeg',
+                   '-y',
+                   # INPUT VIDEO STREAM
+                   '-f', 'rawvideo',
+                   '-vcodec', 'rawvideo',
+                   '-s', f'{cfg.width}x{cfg.height}',
+                   '-pix_fmt', 'rgb24',  # 'bgr24'
+                   '-use_wallclock_as_timestamps', '1',
+                   '-i', '-',
+                   # INPUT AUDIO STREAM
+                   '-f', 'alsa',
+                   '-ac', '1',
+                   # '-channels', '1',
+                   # '-sample_rate', '44100',
+                   '-i', cfg.audio_device,
+                   '-acodec', 'aac',
+                   # OUTPUT VIDEO OPTIONS
+                   '-vcodec', 'libx264',
+                   '-preset', 'ultrafast',
+                   # '-tune', 'film',
+                   '-qp', '0',
+                   # OUTPUT AUDIO OPTIONS
+                   '-acodec', 'mp2',
+                   cfg.output_filename]
 
+        self.process = subprocess.Popen(command, stdin=subprocess.PIPE)
+
+    def write(self, frame):
+        self.process.stdin.write(frame.tobytes())
+
+    def close(self):
+        self.process.stdin.close()
+        self.process.terminate()
+        self.process.wait()
+        print(self.process.poll())
 
 
 def rvm_test():
@@ -173,60 +211,63 @@ def rvm_test():
     random_lines = RandomVerticalLines()
     gradient_color = GrayScaleGradientColorizeFilter()
     grid_lines = ColoredGridFilter()
+    writer = AVStreamWriter()
 
     #fake_camera = pyfakewebcam.FakeWebcam('/dev/video2', 1280, 720)
-    with pyvirtualcam.Camera(width=1280, height=720, fps=30) as fake_camera:
-        with torch.no_grad():
-            while True:
-                st = time.time()
-                success, frame = cap.read()
-                frame = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
-                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                frame.flags.writeable = False
-                bboxes = det.get_face_bbox(frame)
-                res_segm = segm.process(frame)
-                condition = np.stack(
-                    (res_segm.segmentation_mask,) * 3, axis=-1) > 0.1
+    # with pyvirtualcam.Camera(width=1280, height=720, fps=30) as fake_camera:
+    with torch.no_grad():
+        while True:
+            st = time.time()
+            success, frame = cap.read()
+            frame = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+            frame.flags.writeable = False
+            bboxes = det.get_face_bbox(frame)
+            res_segm = segm.process(frame)
+            condition = np.stack(
+                (res_segm.segmentation_mask,) * 3, axis=-1) > 0.1
 
-                cond_gray = res_segm.segmentation_mask > 0.1
-                _, xs = np.nonzero(cond_gray)
-                if len(xs):
-                    min_x, max_x = np.min(xs), np.max(xs)
-                else:
-                    min_x, max_x = 0, WIDTH - 1
+            cond_gray = res_segm.segmentation_mask > 0.1
+            _, xs = np.nonzero(cond_gray)
+            if len(xs):
+                min_x, max_x = np.min(xs), np.max(xs)
+            else:
+                min_x, max_x = 0, WIDTH - 1
 
-                gray = random_lines.transform(gray)
+            gray = random_lines.transform(gray)
 
-                gray[HEIGHT//2:HEIGHT//2 + t_h, WIDTH//2:WIDTH//2 + t_w] = img_text
+            gray[HEIGHT//2:HEIGHT//2 + t_h, WIDTH//2:WIDTH//2 + t_w] = img_text
 
-                cute = gradient_color.transform(gray, endpoints=(min_x, max_x))
+            cute = gradient_color.transform(gray, endpoints=(min_x, max_x))
 
-                cute = grid_lines.transform(cute)
+            cute = grid_lines.transform(cute)
 
-                frame.flags.writeable = True
-                if len(bboxes):
-                    x_0, y_0, x_1, y_1 = bboxes[0]
-                if success:
-                    result = frame
-                    # bg_image = np.zeros(frame.shape, dtype=np.uint8)
-                    bg_image = np.zeros_like(gray, dtype=np.uint8)
-                    #bg_image[:] = BG_COLOR
-                    result = np.where(cond_gray, gray, bg_image)
-                    # result = np.where(condition, result, bg_image)
-                    # result = gs.mix(frame)
-                    # if len(bboxes) > 0:
-                    #     result = result[int(y_0): int(y_1), int(x_0): int(x_1), :]
-                    #     result = np.concatenate([result, np.flip(result, axis=1)], axis=1)
-                    # else:
-                    #     result = result[0]
-                    h, w = result.shape[:2]
-                    #fake_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-                    #fake_frame[:h, :w, :] = result
-                    #fake_camera.send(fake_frame)
-                    #fake_camera.sleep_until_next_frame()
-                    #fake_camera.schedule_frame(fake_frame)
-                    cap.show(cute)
-                print(round(1 / (time.time() - st)))
-                if cv2.waitKey(1) & 0xFF == 27:
-                    cap.release()
-                    break
+            frame.flags.writeable = True
+            if len(bboxes):
+                x_0, y_0, x_1, y_1 = bboxes[0]
+            if success:
+                # result = frame
+                # # bg_image = np.zeros(frame.shape, dtype=np.uint8)
+                # bg_image = np.zeros_like(gray, dtype=np.uint8)
+                # #bg_image[:] = BG_COLOR
+                # result = np.where(cond_gray, gray, bg_image)
+                # # result = np.where(condition, result, bg_image)
+                # # result = gs.mix(frame)
+                # # if len(bboxes) > 0:
+                # #     result = result[int(y_0): int(y_1), int(x_0): int(x_1), :]
+                # #     result = np.concatenate([result, np.flip(result, axis=1)], axis=1)
+                # # else:
+                # #     result = result[0]
+                # h, w = result.shape[:2]
+                # #fake_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+                # #fake_frame[:h, :w, :] = result
+                # #fake_camera.send(fake_frame)
+                # #fake_camera.sleep_until_next_frame()
+                # #fake_camera.schedule_frame(fake_frame)
+                writer.write(cute)
+                cap.show(cute)
+            print(round(1 / (time.time() - st)))
+            if cv2.waitKey(1) & 0xFF == 27:
+                cap.close()
+                writer.close()
+                break
