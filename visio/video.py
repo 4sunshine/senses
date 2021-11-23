@@ -23,8 +23,8 @@ import pyfakewebcam
 class VideoDefaults:
     input_id: int = 0
     window_name: str = 'video_input'
-    width: int = 1280
-    height: int = 720
+    size: Union[int, int] = (1280, 720)
+    origin: Union[int, int] = (0, 0)
     window_position: Union[int, int] = (600, 0)
     flip: bool = True
     file: str = ''
@@ -62,7 +62,7 @@ class FFMPEGWebCam(VideoInput):
             '-f', 'video4linux2',
             '-input_format', 'mjpeg',
             '-framerate', f'{self.cfg.fps}',
-            '-video_size', f'{self.cfg.width}x{self.cfg.height}',
+            '-video_size', f'{self.cfg.size[0]}x{self.cfg.size[1]}',
             '-i', f'/dev/video{self.cfg.input_id}',
             '-pix_fmt', 'bgr24',  # opencv requires bgr24 pixel format # TODO: override from config RGB
             '-an', '-sn',  # disable audio processing
@@ -70,13 +70,13 @@ class FFMPEGWebCam(VideoInput):
             '-f', 'image2pipe',
             '-',  # output to go to stdout
         ]
-        self.read_amount = self.cfg.height * self.cfg.width * 3
+        self.read_amount = self.cfg.size[0] * self.cfg.size[1] * 3
         self.process = subprocess.Popen(ffmpg_cmd, stdout=subprocess.PIPE, bufsize=10**8)
 
     def read(self):
         # transform the bytes read into a numpy array
         frame = np.frombuffer(self.process.stdout.read(self.read_amount), dtype=np.uint8)
-        frame = frame.reshape((self.cfg.height, self.cfg.width, 3))  # height, width, channels
+        frame = frame.reshape((self.cfg.size[0], self.cfg.size[1], 3))  # height, width, channels
         self.process.stdout.flush()
         if not self.cfg.flip and self.cfg.rgb:
             return True, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -98,8 +98,8 @@ class CV2WebCam(VideoInput):
         self.cfg = cfg
         self.cap = cv2.VideoCapture(self.cfg.input_id)
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.size[0])
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.size[1])
         self.window_name = self.cfg.window_name
         cv2.namedWindow(self.window_name)
         self._x, self._y = self.cfg.window_position
@@ -151,7 +151,7 @@ class AVStreamWriter:
                    # INPUT VIDEO STREAM
                    '-f', 'rawvideo',
                    '-vcodec', 'rawvideo',
-                   '-s', f'{cfg.width}x{cfg.height}',
+                   '-s', f'{cfg.size[0]}x{cfg.size[1]}',
                    '-pix_fmt', 'rgb24',  # 'bgr24'
                    '-use_wallclock_as_timestamps', '1',
                    '-i', '-',
