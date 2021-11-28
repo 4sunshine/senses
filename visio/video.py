@@ -35,6 +35,14 @@ class VideoDefaults:
     output_filename: str = 'out.mp4'
 
 
+class EventTracker(object):
+    def __init__(self):
+        pass
+
+    def __getitem__(self, roi, keypoints):
+        return None
+
+
 class MediaDataLayer(object):
     def __init__(self, cfg):
         self.cfg = cfg
@@ -42,6 +50,8 @@ class MediaDataLayer(object):
         self.roi_source = self.init_roi()
         self.effect_source = self.init_effect()
         self.event_tracker = self.init_event_tracker()
+        self._buffer = np.zeros(cfg.size[::-1] + (3,), dtype=np.uint8)
+        self._alpha_buffer = np.zeros(cfg.size[::-1] + (1,), dtype=np.float32)
 
     def init_alpha(self):
         return None
@@ -65,7 +75,7 @@ class MediaDataLayer(object):
         if self.roi_source is not None:
             self.roi_source(buffer, alpha)
         else:
-            return buffer, alpha
+            return dict(), dict()
 
     def effect(self, buffer, alpha, roi, keypoints):
         if self.effect_source is not None:
@@ -84,19 +94,24 @@ class MediaDataLayer(object):
         return success
 
     def float_render(self, roi, keypoints):
-        buffer, alpha = self.effect(self._buffer, self._alpha_buffer, roi, keypoints)
-        return buffer, alpha
+        if self.effect is not None:
+            buffer, alpha = self.effect(self._buffer, self._alpha_buffer, roi, keypoints)
+            return buffer, alpha
+        else:
+            return self._buffer, self._alpha_buffer
 
     def salient_regions(self):
         roi, keypoints = self.roi(self._buffer, self._alpha_buffer)
-        events = self.events(roi, keypoints)
-        return roi, keypoints, events
+        return roi, keypoints
 
     def update(self, events):
         pass
 
     def events(self, roi, keypoints):
-        return self.event_tracker(roi, keypoints)
+        if self.event_tracker is not None:
+            return self.event_tracker(roi, keypoints)
+        else:
+            return []
 
 
 class AlphaSource(object):
@@ -115,6 +130,17 @@ class AlphaSource(object):
         return self.process_image(image)
 
 
+class StaticInput(MediaDataLayer):
+    def __init__(self, cfg):
+        super(StaticInput, self).__init__(cfg)
+        path = hasattr(cfg, 'path')
+        if not path:
+            self.image = np.zeros(self.cfg.size[::-1] + (3,), dtype=np.uint8)
+
+    def read(self):
+        return True, self.image
+
+
 class VideoInput(MediaDataLayer):
     def __init__(self, cfg=VideoDefaults()):
         super(VideoInput, self).__init__(cfg)
@@ -128,7 +154,6 @@ class VideoInput(MediaDataLayer):
     def show(self, image):
         cv2.moveWindow(self.window_name, self._x, self._y)
         cv2.imshow(self.window_name, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-
 
 
 # FFMPEG BACKEND

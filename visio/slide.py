@@ -1,6 +1,13 @@
+import numpy as np
 from pptx import Presentation
 from pptx.util import Pt
 from omegaconf import OmegaConf
+
+from visio.video import VideoInput, AVStreamWriter, CV2WebCam, VideoDefaults, StaticInput, MPSimpleFaceDetector
+
+import torch
+import time
+import cv2
 
 
 class PPTToElements(object):
@@ -197,86 +204,72 @@ class PPTToElements(object):
         return texts
 
 
-class LayeredVideo(object):
-    def __init__(self, cfg):
-        self.cfg = cfg
+class LayeredVideo(VideoInput):
+    def __init__(self, cfg, layers):
+        super(LayeredVideo, self).__init__(cfg)
         self.back = self.init_back()
-        self._cache = self.back.float_render()
+        _ = self.back.is_refreshed()
+        self._cache = self.back.float_render(None, None)
+        self._layers = layers
 
     def init_back(self):
-        return None
+        return StaticInput(self.cfg)
 
-    def float_render(self):
+    def float_render(self, _, __):
         all_rois, all_keypoints = self.back.salient_regions()
-        events = [self.back.event]
+        events = [self.back.events]
 
         for l in self._layers:
             rois, keypoints = l.salient_regions()
-            events.append(l.events(rois, keypoints))
+            events += l.events(rois, keypoints)
             all_rois = {**all_rois, **rois}
             all_keypoints = {**all_keypoints, **keypoints}
 
-        result, alpha = self.back.float_render()
+        result, alpha = self.back.float_render(None, None)
+
         for l in self._layers:
             l.update(events)
-            layer, alpha = l.float_render()
-            result = result * (1. - alpha) + layer * alpha
+            layer, alpha = l.float_render(all_rois, all_keypoints)
+            if alpha is not None:
+                result = result * (1. - alpha) + layer * alpha
+            else:
+                result = layer
 
-        return result
+        return result, None
 
-    def stream(self):
-        is_refreshed = any(l.is_refreshed for l in self._layers)
+    def read(self):
+        is_refreshed = any(l.is_refreshed() for l in self._layers)
         if is_refreshed:
-            self._cache = self.float_render()
-        return self._cache
-
-
-# class OnVideoLayout:
-#     """
-#     CONSIDER IT AS POSSIBLE [BACKGROUND, INTERMEDIATE_LAYOUT_RENDER, FOREGROUND(VIDEO OR PERSON), TOP_LAYOUT_RENDER]
-#     LATER MAKE IT OPTIMIZED AND GENERAL WITH FIELDS
-#     .size
-#     .margins
-#     .main_size
-#     .origin
-#     .render()
-#     """
-#     def __init__(self, cfg):
-#         self.size = cfg.size
-#         self.margins = cfg.margins
-#         self.schema = cfg.schema
-#         self.main_origin = cfg.origin
-#         self.main_size = (cfg.size[0] - 2 * cfg.margins[0], cfg.size[1] - 2 * cfg.margins[1])
-#         self.background = self.set_background() #Image.new('RGBA', self.size, self.schema.base_color)
-#
-#     def set_background(self, color):
-#         self.background = Image.new('RGBA', self.size, color)
-#
-#
-#     def init_linear(self, elements, weights, margin=(0, 0, 0, 0), axis='y'):
-#         assert len(elements) == len(weights)
-#         #back = self.background.copy()
-#         origin, size = update_with_margin(self.main_size, self.main_origin, margin)
-#         bboxes = get_divided_bboxes(size, origin, weights, axis)
-#         sizes = [(bb[2] - bb[0], bb[3] - bb[1]) for bb in bboxes]
-#         new_elements = []
-#         for i, (content, cfg) in enumerate(elements):
-#             cfg.target_size = sizes[i]
-#             cfg.origin = (bboxes[i][0], bboxes[i][1])
-#             new_elements.append(ELEMENTS[cfg.type](content, cfg))
-#         return new_elements
-#
-#     def render(self, elements):
-#         back = self.background.copy()
-#         for el in elements:
-#             el.render(el.cfg.origin, 0, back)
-#         return back
-#
-#     def feed_and_render(self, elements, weights, margin=(0, 0, 0, 0), axis='y'):
-#         return self.render(self.init_linear(elements, weights, margin, axis))
+            self._cache, _ = self.float_render(None, None)
+        return True, self._cache
 
 
 def test_ppt_class(path):
     from visio.video import VideoDefaults
     cfg = VideoDefaults()
     s = PPTToElements(path, cfg)
+
+
+def test_layered_video():
+    cfg = VideoDefaults()
+    layers = [CV2WebCam()]
+    cap = LayeredVideo(cfg, layers)
+    det = MPSimpleFaceDetector()
+    #writer = AVStreamWriter()
+    with torch.no_grad():
+        while True:
+            st = time.time()
+            success, frame = cap.read()
+            if success:
+                # writer.write(frame)
+                frame.flags.writeable = False
+                det.get_face_bbox(frame)
+                bboxes = frame.flags.writeable = True
+                cap.show(frame)
+            print(round(1 / (time.time() - st)))
+            if cv2.waitKey(1) & 0xFF == 27:
+                cap.close()
+                # writer.close()
+                for l in layers:
+                    l.close()
+                break
