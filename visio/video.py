@@ -25,6 +25,7 @@ class VideoDefaults:
     window_name: str = 'video_input'
     size: Union[int, int] = (1280, 720)
     origin: Union[int, int] = (0, 0)
+    margins: Union[int, int] = (0, 0)
     window_position: Union[int, int] = (600, 0)
     flip: bool = True
     file: str = ''
@@ -34,15 +35,92 @@ class VideoDefaults:
     output_filename: str = 'out.mp4'
 
 
-class VideoInput(object):
-    def __init__(self, cfg=VideoDefaults()):
+class MediaDataLayer(object):
+    def __init__(self, cfg):
         self.cfg = cfg
+        self.alpha_source = self.init_alpha()
+        self.roi_source = self.init_roi()
+        self.effect_source = self.init_effect()
+        self.event_tracker = self.init_event_tracker()
+
+    def init_alpha(self):
+        return None
+
+    def init_roi(self):
+        return None
+
+    def init_effect(self):
+        return None
+
+    def init_event_tracker(self):
+        return None
+
+    def alpha(self, buffer):
+        if self.alpha_source is not None:
+            return self.alpha_source(buffer)
+        else:
+            return None
+
+    def roi(self, buffer, alpha):
+        if self.roi_source is not None:
+            self.roi_source(buffer, alpha)
+        else:
+            return buffer, alpha
+
+    def effect(self, buffer, alpha, roi, keypoints):
+        if self.effect_source is not None:
+            return self.effect_source(buffer, alpha, roi, keypoints)
+        else:
+            return buffer, alpha
+
+    def read(self):
+        return False, None
+
+    def is_refreshed(self):
+        success, data = self.read()
+        if success:
+            self._buffer = data
+            self._alpha_buffer = self.alpha(self._buffer)
+        return success
+
+    def float_render(self, roi, keypoints):
+        buffer, alpha = self.effect(self._buffer, self._alpha_buffer, roi, keypoints)
+        return buffer, alpha
+
+    def salient_regions(self):
+        roi, keypoints = self.roi(self._buffer, self._alpha_buffer)
+        events = self.events(roi, keypoints)
+        return roi, keypoints, events
+
+    def update(self, events):
+        pass
+
+    def events(self, roi, keypoints):
+        return self.event_tracker(roi, keypoints)
+
+
+class AlphaSource(object):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.init_source()
+
+    def init_source(self):
+        pass
+
+    def process_image(self, image):
+        h, w = image.shape[:2]
+        return np.ones((h, w, 1), dtype=np.float32)
+
+    def __getitem__(self, image):
+        return self.process_image(image)
+
+
+class VideoInput(MediaDataLayer):
+    def __init__(self, cfg=VideoDefaults()):
+        super(VideoInput, self).__init__(cfg)
         self.window_name = self.cfg.window_name
         cv2.namedWindow(self.window_name)
         self._x, self._y = self.cfg.window_position
-
-    def read(self):
-        pass
 
     def close(self):
         cv2.destroyAllWindows()
@@ -50,6 +128,7 @@ class VideoInput(object):
     def show(self, image):
         cv2.moveWindow(self.window_name, self._x, self._y)
         cv2.imshow(self.window_name, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+
 
 
 # FFMPEG BACKEND

@@ -197,6 +197,40 @@ class PPTToElements(object):
         return texts
 
 
+class LayeredVideo(object):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.back = self.init_back()
+        self._cache = self.back.float_render()
+
+    def init_back(self):
+        return None
+
+    def float_render(self):
+        all_rois, all_keypoints = self.back.salient_regions()
+        events = [self.back.event]
+
+        for l in self._layers:
+            rois, keypoints = l.salient_regions()
+            events.append(l.events(rois, keypoints))
+            all_rois = {**all_rois, **rois}
+            all_keypoints = {**all_keypoints, **keypoints}
+
+        result, alpha = self.back.float_render()
+        for l in self._layers:
+            l.update(events)
+            layer, alpha = l.float_render()
+            result = result * (1. - alpha) + layer * alpha
+
+        return result
+
+    def stream(self):
+        is_refreshed = any(l.is_refreshed for l in self._layers)
+        if is_refreshed:
+            self._cache = self.float_render()
+        return self._cache
+
+
 # class OnVideoLayout:
 #     """
 #     CONSIDER IT AS POSSIBLE [BACKGROUND, INTERMEDIATE_LAYOUT_RENDER, FOREGROUND(VIDEO OR PERSON), TOP_LAYOUT_RENDER]
