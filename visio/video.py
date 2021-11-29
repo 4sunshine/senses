@@ -20,19 +20,10 @@ import pyfakewebcam
 
 
 @dataclass
-class VideoDefaults:
-    input_id: int = 0
-    window_name: str = 'video_input'
-    size: Union[int, int] = (1280, 720)
-    origin: Union[int, int] = (0, 0)
-    margins: Union[int, int] = (0, 0)
-    window_position: Union[int, int] = (600, 0)
-    flip: bool = True
-    file: str = ''
-    fps: int = 25
-    rgb: bool = True
-    audio_device: str = 'hw:2,0'
-    output_filename: str = 'out.mp4'
+class AlphaSourceDefaults:
+    model_path: str = 'visio/segmentation/rvm_mobilenetv3_fp32.torchscript'
+    downsample_ratio: float = 0.25
+    alpha_compose: bool = True
 
 
 class EventTracker(object):
@@ -52,9 +43,15 @@ class MediaDataLayer(object):
         self.event_tracker = self.init_event_tracker()
         self._buffer = np.zeros(cfg.size[::-1] + (3,), dtype=np.uint8)
         self._alpha_buffer = np.zeros(cfg.size[::-1] + (1,), dtype=np.float32)
+        self._alpha_compose = None
 
     def init_alpha(self):
-        return None
+        # POOR ARCHITECTURE
+        config = self.cfg.alpha_source
+        if config is None:
+            return None
+        else:
+            return self.cfg.alpha_source(self.cfg.alpha_source_cfg)
 
     def init_roi(self):
         return None
@@ -67,9 +64,9 @@ class MediaDataLayer(object):
 
     def alpha(self, buffer):
         if self.alpha_source is not None:
-            return self.alpha_source(buffer)
+            return self.alpha_source.process_image(buffer)
         else:
-            return None
+            return None, None
 
     def roi(self, buffer, alpha):
         if self.roi_source is not None:
@@ -90,15 +87,15 @@ class MediaDataLayer(object):
         success, data = self.read()
         if success:
             self._buffer = data
-            self._alpha_buffer = self.alpha(self._buffer)
+            self._alpha_buffer, self._alpha_compose = self.alpha(self._buffer)
         return success
 
     def float_render(self, roi, keypoints):
         if self.effect is not None:
             buffer, alpha = self.effect(self._buffer, self._alpha_buffer, roi, keypoints)
-            return buffer, alpha
+            return buffer, alpha, self._alpha_compose
         else:
-            return self._buffer, self._alpha_buffer
+            return self._buffer, self._alpha_buffer, self._alpha_compose
 
     def salient_regions(self):
         roi, keypoints = self.roi(self._buffer, self._alpha_buffer)
@@ -124,10 +121,46 @@ class AlphaSource(object):
 
     def process_image(self, image):
         h, w = image.shape[:2]
-        return np.ones((h, w, 1), dtype=np.float32)
+        return np.ones((h, w, 1), dtype=np.float32), None
 
     def __getitem__(self, image):
-        return self.process_image(image)
+        return self.process_image(image), None
+
+
+class RVMAlpha(AlphaSource):
+    def init_source(self):
+        self.model = torch.jit.load(self.cfg.model_path).cuda().eval()
+        # self.model.backbone_scale = 1 / 4
+        self._rec = [None] * 4
+        self._downsample_ratio = self.cfg.downsample_ratio
+
+    @torch.no_grad()
+    def process_image(self, image):
+        source = to_tensor(image).unsqueeze_(0) #.permute(0, 3, 1, 2)
+        fgr, pha, *self._rec = self.model(source.cuda(), *self._rec, self._downsample_ratio)
+        # print(fgr)
+        if not self.cfg.alpha_compose:
+            return pha[0, 0, ...].unsqueeze_(-1).cpu().numpy(), None  # com.mul(255).byte().cpu().permute(0, 2, 3, 1).numpy()
+        else:
+            return pha[0, 0, ...].unsqueeze_(-1).cpu().numpy(), (pha * fgr).mul(255).byte().cpu().permute(0, 2, 3, 1).numpy()[0]
+
+
+@dataclass
+class VideoDefaults:
+    input_id: int = 0
+    window_name: str = 'video_input'
+    size: Union[int, int] = (1280, 720)
+    origin: Union[int, int] = (0, 0)
+    margins: Union[int, int] = (0, 0)
+    window_position: Union[int, int] = (600, 0)
+    flip: bool = True
+    file: str = ''
+    fps: int = 25
+    rgb: bool = True
+    audio_device: str = 'hw:2,0'
+    output_filename: str = 'out.mp4'
+    alpha_source: AlphaSource = RVMAlpha
+    alpha_source_cfg: AlphaSourceDefaults = AlphaSourceDefaults()
 
 
 class StaticInput(MediaDataLayer):

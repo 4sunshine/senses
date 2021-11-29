@@ -225,22 +225,25 @@ class LayeredVideo(VideoInput):
             all_rois = {**all_rois, **rois}
             all_keypoints = {**all_keypoints, **keypoints}
 
-        result, alpha = self.back.float_render(None, None)
+        result, _, _ = self.back.float_render(None, None)
 
         for l in self._layers:
             l.update(events)
-            layer, alpha = l.float_render(all_rois, all_keypoints)
+            layer, alpha, float_compose = l.float_render(all_rois, all_keypoints)
             if alpha is not None:
-                result = result * (1. - alpha) + layer * alpha
+                if float_compose is not None:
+                    result = float_compose#result * (1. - alpha) + float_compose
+                else:
+                    result = result * (1. - alpha) + layer * alpha
             else:
                 result = layer
 
-        return result, None
+        return result, None, None
 
     def read(self):
         is_refreshed = any(l.is_refreshed() for l in self._layers)
         if is_refreshed:
-            self._cache, _ = self.float_render(None, None)
+            self._cache, _, _ = self.float_render(None, None)
         return True, self._cache
 
 
@@ -263,8 +266,8 @@ def test_layered_video():
             if success:
                 # writer.write(frame)
                 frame.flags.writeable = False
-                det.get_face_bbox(frame)
-                bboxes = frame.flags.writeable = True
+                #det.get_face_bbox(frame)
+                frame.flags.writeable = True
                 cap.show(frame)
             print(round(1 / (time.time() - st)))
             if cv2.waitKey(1) & 0xFF == 27:
