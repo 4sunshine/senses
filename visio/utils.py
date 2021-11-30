@@ -6,7 +6,7 @@ from PIL import ImageDraw, ImageFont, Image, ImageOps
 import numpy as np
 
 
-from visio.filters import GradientColorizeCUDAFilter, ColorGridCUDAFilter, RandomVerticalLines, ComposeFilter
+from visio.filters import GradientColorizeCUDAFilter, ColorGridCUDAFilter, RandomVerticalLinesCUDAFilter, ComposeFilter
 
 
 ALIGNMENTS = ('BC', 'TC', 'C', 'LC', 'RC')
@@ -363,7 +363,8 @@ def change_color(img, color_to_change, new_color, binarized=True):
 
 def test_cuda_cmap():
     image = torch.ones((3, 720, 1280), dtype=torch.float32, device='cuda')
-    filter = ComposeFilter(content=[GradientColorizeCUDAFilter(), ColorGridCUDAFilter()])
+    filter = ComposeFilter(content=[RandomVerticalLinesCUDAFilter(),
+                                    GradientColorizeCUDAFilter(), ColorGridCUDAFilter()])
     start = time.time()
     N_STEPS = 1000
     for _ in range(N_STEPS):

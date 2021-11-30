@@ -142,12 +142,10 @@ class ColorConverterCUDA:
 
     @torch.no_grad()
     def process_grad_grayscale(self, gray, endpoints=None, axis=1, invert=False, sqrt=False, flip=False):
-        #start = time.time()
         if len(gray.shape) >= 3:
             gray = self.rgb_to_gray(gray)
         _, h, w = gray.shape
         dim_size = w if axis else h
-        #print(f'gray: {time.time() - start}')
         if not endpoints:
             min_x, max_x = 0, dim_size - 1
         else:
@@ -156,8 +154,6 @@ class ColorConverterCUDA:
             max_x = min(max(0, max_x), dim_size - 1)
         if sqrt:
             gray = torch.sqrt(gray)  #[:, min_x: max_x + 1]
-
-        #start = time.time()
 
         all_grad_points = torch.linspace(0, 255, (max_x - min_x + 1), dtype=torch.float32, device='cuda')
         left_border = torch.zeros((min_x, ), dtype=torch.float32, device='cuda')
@@ -170,21 +166,11 @@ class ColorConverterCUDA:
         else:
             all_points = all_points[:, None]
 
-        #print(f'points: {time.time() - start}')
-
-        #start = time.time()
-
         colored_hsv = self.hsv_lookup(all_points).permute(2, 0, 1)
-        #print(f'lookup: {time.time() - start}')
-
-        #start = time.time()
 
         new_v = colored_hsv[2, ...] * gray[0]
         result = torch.empty((3, ) + gray.shape[-2:], dtype=torch.float32, device='cuda')
 
-        #print(f'empty: {time.time() - start}')
-
-        #start = time.time()
         if not invert:
             result[2, ...] = new_v
             result[:2, :, :] = colored_hsv[:2, :, :]
@@ -192,13 +178,7 @@ class ColorConverterCUDA:
             result[1, ...] = new_v
             result[[0, 2], :, :] = colored_hsv[[0, 2], :, :][:, :, None]
 
-        #print(f'broad: {time.time() - start}')
-
-        #start = time.time()
-        result = self.hsv_to_rgb(result)
-        #print(f'hsv: {time.time() - start}')
-
-        return result
+        return self.hsv_to_rgb(result)
 
 
 class BaseFilter(object):
@@ -251,19 +231,10 @@ class ColorGridFilter(BaseFilter):
         return image
 
 
-@dataclass
-class ColorGridCUDAFilterDefaults:
-    color: Union[int, int, int] = (0, 0, 0)
-    step_x: int = 4
-    step_y: int = 4
-    apply_x: bool = True
-    apply_y: bool = True
-
-
 class ColorGridCUDAFilter(BaseFilter):
-    def __init__(self, cfg=ColorGridCUDAFilterDefaults()):
+    def __init__(self, cfg=ColorGridFilterDefaults()):
         super().__init__(cfg)
-        self.color = torch.tensor(self.cfg.color, dtype=torch.float32, device='cuda')
+        self.color = torch.tensor(self.cfg.color, dtype=torch.float32, device='cuda') / 255.
 
     def transform(self, image, *args, **kwargs):
         if len(image.shape) > 2:
@@ -307,14 +278,14 @@ class GradientColorizeCUDAFilter(BaseFilter):
 
 
 @dataclass
-class RandomVerticalLinesDefaults:
+class RandomVerticalLinesFilterDefaults:
     count: int = 15
     change_every: int = 1
 
 
-class RandomVerticalLines(BaseFilter):
-    def __init__(self, cfg=RandomVerticalLinesDefaults()):
-        super(RandomVerticalLines, self).__init__(cfg)
+class RandomVerticalLinesFilter(BaseFilter):
+    def __init__(self, cfg=RandomVerticalLinesFilterDefaults()):
+        super(RandomVerticalLinesFilter, self).__init__(cfg)
 
     def transform(self, image, *args, **kwargs):
         w = image.shape[1]
@@ -328,17 +299,18 @@ class RandomVerticalLines(BaseFilter):
         return image
 
 
-class RandomVerticalLines(BaseFilter):
-    def __init__(self, cfg=RandomVerticalLinesDefaults()):
-        super(RandomVerticalLines, self).__init__(cfg)
+class RandomVerticalLinesCUDAFilter(BaseFilter):
+    def __init__(self, cfg=RandomVerticalLinesFilterDefaults()):
+        super(RandomVerticalLinesCUDAFilter, self).__init__(cfg)
+        self._index = torch.randint(0, 1, (self.cfg.count,), dtype=torch.int64)
 
     def transform(self, image, *args, **kwargs):
-        w = image.shape[1]
+        w = image.shape[-1]
         if self.tick % self.cfg.change_every == 0:
-            index = np.array(np.random.randint(0, w, self.cfg.count, dtype=np.int32))
+            self._index = torch.randint(0, w, (self.cfg.count,), dtype=torch.int64)
         self.tick += 1
         if len(image.shape) == 2:
-            image[:, index] = np.random.randint(0, 255, (1,), dtype=np.uint8)
+            image[:, self._index] = torch.rand((1,), dtype=torch.float32)  # TODO: FIX THIS CASE
         else:
-            image[:, index, :3] = np.random.randint(0, 255, (3,), dtype=np.uint8)
+            image[..., :3, :, self._index] = torch.rand((3,), dtype=torch.float32, device='cuda')[None, :, None, None]
         return image
