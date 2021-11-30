@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from detect.face import MPSimpleFaceDetector
 from detect.hands import MPHandsDetector, MPPoseDetector
-from visio.utils import ColorMap
+from visio.filters import ColorMap
 
 from visio.text import draw_text_image
 from visio.filters import *
@@ -347,7 +347,7 @@ def rvm_test():
     img_text.flags.writeable = False
 
     random_lines = RandomVerticalLines()
-    gradient_color = GrayScaleGradientColorizeFilter()
+    gradient_color = GradientColorizeFilter()
     grid_lines = ColorGridFilter()
     writer = AVStreamWriter()
 

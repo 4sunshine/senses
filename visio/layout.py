@@ -16,7 +16,9 @@ from visio.utils import (point_crop,
                          get_symmetric_texts,
                          get_ellipse_bbox,
                          get_image_tl,
-                         ColorMap)
+                         )
+
+from visio.filters import ColorMap
 
 
 # TODO: REFACTOR IMPORTS AND IMPLEMENT ELEMENTS IN CORRESPONDING FILES
