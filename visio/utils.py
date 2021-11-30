@@ -1,10 +1,165 @@
-import cv2.cv2
+import cv2
+import torch
 from PIL import ImageDraw, ImageFont, Image, ImageOps
 import numpy as np
 import matplotlib.pyplot as plt
+import torchvision.transforms.functional_tensor as F
 
 
 class ColorMap:
+    def __init__(self, cmap='bwr'):
+        """TABLE SHAPE IS 256 x 3"""
+        self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
+
+    @staticmethod
+    def _get_table(cmap):
+        image = np.arange(256, dtype=np.uint8)[:, np.newaxis]
+        cm = plt.get_cmap(cmap)
+        colored_image = cm(image)
+        colored_image = (colored_image[:, :, :3] * 255).astype(np.uint8)
+        colored_hsv = cv2.cvtColor(colored_image, cv2.COLOR_RGB2HSV)
+        table_hsv = colored_hsv[:, 0]
+        table = colored_image[:, 0]
+        table = [tuple(col) for col in table]
+        return table, cmap, cm, table_hsv
+
+    def set_color_map(self, cmap):
+        self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
+
+    def process_grad_grayscale(self, gray, endpoints=None, axis=1, invert=False, sqrt=False, flip=False):
+        if len(gray.shape) == 3:
+            gray = cv2.cvtColor(gray, cv2.COLOR_RGB2GRAY)
+        h, w = np.shape(gray)
+        dim_size = w if axis else h
+        if not endpoints:
+            min_x, max_x = 0, dim_size - 1
+        else:
+            min_x, max_x = endpoints
+            min_x = min(max(0, min_x), dim_size - 1)
+            max_x = min(max(0, max_x), dim_size - 1)
+        if sqrt:
+            gray = np.sqrt(gray / 255.)  #[:, min_x: max_x + 1]
+        else:
+            gray = gray / 255.
+        all_grad_points = np.linspace(0, 255, (max_x - min_x + 1), dtype=np.uint8)
+        left_border = np.zeros((min_x, ), dtype=np.uint8)
+        right_border = 255 * np.ones((max(dim_size - max_x - 1, 0), ), dtype=np.uint8)
+        all_points = np.concatenate([left_border, all_grad_points, right_border])
+        if flip:
+            all_points = np.flip(all_points)
+        if axis == 1:
+            all_points = all_points[np.newaxis, :]
+        else:
+            all_points = all_points[:, np.newaxis]
+
+        colored_image = self.palette(all_points)
+        colored_image = (colored_image[:, :, :3] * 255).astype(np.uint8)
+        colored_hsv = cv2.cvtColor(colored_image, cv2.COLOR_RGB2HSV)
+        new_v = (colored_hsv[..., 2] * gray).astype(np.uint8)
+        result = np.zeros(gray.shape + (3,), dtype=np.uint8)
+
+        if not invert:
+            result[..., 2] = new_v
+            result[:, :, :2] = colored_hsv[:, :, :2][:, None, :]
+        else:
+            result[..., 1] = new_v
+            result[:, :, [0, 2]] = colored_hsv[:, :, [0, 2]][:, None]
+
+        return cv2.cvtColor(result, cv2.COLOR_HSV2RGB)
+
+    def __getitem__(self, item):
+        if isinstance(item, np.ndarray):
+            colored_image = self.palette(item)
+            return (colored_image[:, :, :3] * 255).astype(np.uint8)
+        elif isinstance(item, Image.Image):
+            img = item.convert('L')
+            img = np.array(img.getchannel(0))
+            colored_image = self.palette(img)
+            return Image.fromarray((colored_image[:, :, :3] * 255).astype(np.uint8))
+        else:
+            item = max(0, min(255, item))
+            return self.table[item]
+
+
+class ColorConverterCUDA:
+    def __init__(self, colormap='nipy_spectral'):
+        self.rgb_lookup, self.hsv_lookup = self._get_table(colormap)
+
+    @staticmethod
+    def rgb_to_gray(img):
+        """https://github.com/pytorch/vision/blob/main/torchvision/transforms/functional_tensor.py"""
+        r, g, b = img.unbind(dim=-3)
+        # This implementation closely follows the TF one:
+        # https://github.com/tensorflow/tensorflow/blob/v2.3.0/tensorflow/python/ops/image_ops_impl.py#L2105-L2138
+        l_img = (0.2989 * r + 0.587 * g + 0.114 * b).to(img.dtype)
+        return l_img.unsqueeze(dim=-3)
+
+    @staticmethod
+    def rgb_to_hsv(img):
+        return F._rgb2hsv(img)
+
+    @staticmethod
+    def hsv_to_rgb(img):
+        return F._hsv2rgb(img)
+
+    @staticmethod
+    def float_to_numpy(img):
+        if len(img.shape) == 3:
+            return img.mul(255).byte().cpu().permute(1, 2, 0).numpy()
+        else:
+            return img.mul(255).byte().cpu().permute(0, 2, 3, 1).numpy()
+
+    def _get_table(self, cmap):
+        image = np.arange(256, dtype=np.uint8)[:, np.newaxis]
+        cm = plt.get_cmap(cmap)
+        colored_image = cm(image)
+        colored_image = torch.from_numpy(colored_image[:, :, :3]).permute(2, 0, 1).float()
+        hsv_image = self.rgb_to_hsv(colored_image)
+        rgb_table = torch.nn.Embedding(256, 3, _weight=colored_image[..., 0].T).requires_grad_(False).cuda()
+        hsv_table = torch.nn.Embedding(256, 3, _weight=hsv_image[..., 0].T).requires_grad_(False).cuda()
+        return rgb_table, hsv_table
+
+    @torch.no_grad()
+    def process_grad_grayscale(self, gray, endpoints=None, axis=1, invert=False, sqrt=False, flip=False):
+        if len(gray.shape) >= 3:
+            gray = self.rgb_to_gray(gray)
+        _, h, w = np.shape(gray)
+        dim_size = w if axis else h
+        if not endpoints:
+            min_x, max_x = 0, dim_size - 1
+        else:
+            min_x, max_x = endpoints
+            min_x = min(max(0, min_x), dim_size - 1)
+            max_x = min(max(0, max_x), dim_size - 1)
+        if sqrt:
+            gray = torch.sqrt(gray)  #[:, min_x: max_x + 1]
+
+        all_grad_points = torch.linspace(0, 255, (max_x - min_x + 1), dtype=torch.int32, device='cuda')
+        left_border = torch.zeros((min_x, ), dtype=torch.int32, device='cuda')
+        right_border = 255 * torch.ones((max(dim_size - max_x - 1, 0), ), dtype=torch.int32, device='cuda')
+        all_points = torch.cat([left_border, all_grad_points, right_border])
+        if flip:
+            all_points = all_points[::-1]
+        if axis == 1:
+            all_points = all_points[None, :]
+        else:
+            all_points = all_points[:, None]
+
+        colored_hsv = self.hsv_lookup(all_points).permute(2, 0, 1)
+        new_v = colored_hsv[2, ...] * gray[0]
+        result = torch.empty((3, ) + gray.shape[-2:], dtype=torch.float32, device='cuda')
+
+        if not invert:
+            result[2, ...] = new_v
+            result[:2, :, :] = colored_hsv[:2, :, :]
+        else:
+            result[1, ...] = new_v
+            result[[0, 2], :, :] = colored_hsv[[0, 2], :, :][:, :, None]
+
+        return self.hsv_to_rgb(result)
+
+
+class ColorMapCUDA:
     def __init__(self, cmap='bwr'):
         """TABLE SHAPE IS 256 x 3"""
         self.table, self.cmap, self.palette, self.hsv = self._get_table(cmap)
@@ -429,3 +584,14 @@ def change_color(img, color_to_change, new_color, binarized=True):
     data[..., :-1][replace_areas.T] = new_color  # Transpose back needed
 
     return Image.fromarray(data)
+
+
+def test_cuda_cmap():
+    image = torch.ones((3, 720, 1280), dtype=torch.float32, device='cuda')
+    cm = ColorConverterCUDA()
+    rgb = cm.process_grad_grayscale(image, axis=0)
+    rgb = rgb.mul(255).byte().cpu().permute(1, 2, 0).numpy()
+    from PIL import Image
+    img = Image.fromarray(rgb)
+    img.save('test_cuda.png')
+    #print(rgb.shape)
