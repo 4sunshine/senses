@@ -45,6 +45,16 @@ class MediaDataLayer(object):
         self._alpha_buffer = np.zeros(cfg.size[::-1] + (1,), dtype=np.float32)
         self._alpha_compose = None
 
+        self.stream = {
+            'buffer_cpu': np.zeros(cfg.size[::-1] + (3,), dtype=np.uint8),
+            'alpha_cpu': np.ones(cfg.size[::-1] + (1,), dtype=np.float32),
+            'buffer_cuda': None,
+            'alpha_cuda': None,
+            'timestamp': 0.,
+            'salient_rois': dict(),
+            'keypoints': dict(),
+        }
+
     def init_alpha(self):
         # POOR ARCHITECTURE
         config = self.cfg.alpha_source
@@ -111,38 +121,6 @@ class MediaDataLayer(object):
             return []
 
 
-class AlphaSource(object):
-    def __init__(self, cfg):
-        self.cfg = cfg
-        self.init_source()
-
-    def init_source(self):
-        pass
-
-    def process_image(self, image):
-        h, w = image.shape[:2]
-        return np.ones((h, w, 1), dtype=np.float32), None
-
-    def __getitem__(self, image):
-        return self.process_image(image), None
-
-
-class RVMAlpha(AlphaSource):
-    def init_source(self):
-        self.model = torch.jit.load(self.cfg.model_path).cuda().eval()
-        # self.model.backbone_scale = 1 / 4
-        self._rec = [None] * 4
-        self._downsample_ratio = self.cfg.downsample_ratio
-
-    @torch.no_grad()
-    def process_image(self, image):
-        source = to_tensor(image).unsqueeze_(0) #.permute(0, 3, 1, 2)
-        fgr, pha, *self._rec = self.model(source.cuda(), *self._rec, self._downsample_ratio)
-        # print(fgr)
-        if not self.cfg.alpha_compose:
-            return pha[0, 0, ...].unsqueeze_(-1).cpu().numpy(), None  # com.mul(255).byte().cpu().permute(0, 2, 3, 1).numpy()
-        else:
-            return pha[0, 0, ...].unsqueeze_(-1).cpu().numpy(), (pha * fgr).mul(255).byte().cpu().permute(0, 2, 3, 1).numpy()[0]
 
 
 @dataclass
@@ -159,7 +137,7 @@ class VideoDefaults:
     rgb: bool = True
     audio_device: str = 'hw:2,0'
     output_filename: str = 'out.mp4'
-    alpha_source: AlphaSource = RVMAlpha
+    #alpha_source: AlphaSource = RVMAlpha
     alpha_source_cfg: AlphaSourceDefaults = AlphaSourceDefaults()
 
 
@@ -346,7 +324,7 @@ def rvm_test():
     img_text = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     img_text.flags.writeable = False
 
-    random_lines = RandomVerticalLines()
+    random_lines = RandomVerticalLinesFilter()
     gradient_color = GradientColorizeFilter()
     grid_lines = ColorGridFilter()
     writer = AVStreamWriter()
