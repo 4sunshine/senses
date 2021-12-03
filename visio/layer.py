@@ -11,6 +11,8 @@ from enum import Enum
 
 from typing import List
 
+from detect.face import MPSimpleFaceDetector
+
 
 def defaults_mapping(cfg):
     return MappingProxyType(cfg)
@@ -155,6 +157,172 @@ class TransparencyConfig:
 
 # ******* REGION BLOCK ******** #
 
+class RegionSource(object):
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.init_source()
+
+    def init_source(self):
+        pass
+
+    def process_stream(self, stream):
+        pass
+
+    def close(self):
+        pass
+        # if stream['rgb_buffer_cpu'] is not None:
+        #     h, w = stream['rgb_buffer_cpu'].shape[: 2]
+        #     stream['rois']['frame_bbox'] = [0, 0, w - 1, h - 1]
+        # elif stream['rgb_buffer_cuda'] is not None:
+        #     h, w = stream['rgb_buffer_cuda'].shape[1: 3]
+        #     stream['rois']['frame_bbox'] = [0, 0, w - 1, h - 1]
+
+
+# LATER COMPOSITION
+
+
+class MPFaceDetector(RegionSource):
+    def __init__(self, cfg):
+        super(MPFaceDetector, self).__init__(cfg)
+        self.model = MPSimpleFaceDetector(cfg.model_type,
+                                          cfg.det_conf,
+                                          cfg.max_detections)
+
+    def process_stream(self, stream):
+        stream['rois']['face'] = self.model.get_face_bbox(stream['rgb_buffer_cpu'])[0]
+
+    def close(self):
+        self.model.close()
+
+
+class PersonRegionCUDA(RegionSource):
+    def __init__(self, cfg):
+        super(PersonRegionCUDA, self).__init__(cfg)
+
+    def process_stream(self, stream):
+        y, x = torch.where(stream['alpha_cuda'][0] > self.cfg.threshold)
+        x_min = torch.min(x)
+        x_max = torch.max(x)
+        y_min = torch.min(y)
+        y_max = torch.max(y)
+        stream['rois']['person_region'][0] = x_min
+        stream['rois']['person_region'][1] = y_min
+        stream['rois']['person_region'][2] = x_max
+        stream['rois']['person_region'][3] = y_max
+
+
+class RegionType(Enum):
+    Face = 0
+    Body = 1
+
+
+REGION = defaults_mapping(
+    {
+        RegionType.Face: MPFaceDetector,
+        RegionType.Body: PersonRegionCUDA,
+    }
+)
+
+
+@dataclass
+class RegionConfig:
+    solution = RegionType.Body
+    type = SourceType.region
+    name = 'region'
+    device = DeviceType.cuda
+    threshold = 0.05
+
+
+# ******** EFFECT SOURCE ******* #
+
+class EffectSource(object):
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def process_stream(self, stream):
+        pass
+
+    def close(self):
+        pass
+
+
+class ColorGridCUDAEffect(EffectSource):
+    def __init__(self, cfg):
+        super(ColorGridCUDAEffect, self).__init__(cfg)
+        self.color = torch.tensor(self.cfg.color, dtype=torch.float32, device='cuda') / 255.
+
+    def process_stream(self, stream):
+        image = stream['rgb_buffer_cuda']
+        if len(image.shape) > 2:
+            if self.cfg.apply_x:
+                image[:3, :, ::self.cfg.step_x] = self.color[:, None, None]
+            if self.cfg.apply_y:
+                image[:3, ::self.cfg.step_y, :] = self.color[:, None, None]
+
+
+class EffectType(Enum):
+    Grid = 0
+
+
+EFFECT = defaults_mapping(
+    {
+        EffectType.Grid: ColorGridCUDAEffect,
+    }
+)
+
+
+@dataclass
+class EffectConfig:
+    solution = EffectType.Grid
+    type = SourceType.effect
+    name = 'effect'
+    device = DeviceType.cuda
+    threshold = 0.05
+    apply_x = True
+    apply_y = True
+    step_x = 4
+    step_y = 4
+    color = (0, 0, 0)
+
+# ******* EVENTS BLOCK ******** #
+
+
+class EventType(Enum):
+    started = 0
+    finished = 1
+    appear = 2
+    fade_out = 3
+    keypress = 4
+    keypoint = 5
+    openhand = 6
+    finger_at = 7
+    face_at = 8
+    next_element = 9
+
+
+class Event(object):
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def process_stream(self, stream):
+        pass
+
+    def listen(self):
+        pass
+
+
+class Keypress(Event):
+    def process_stream(self, stream):
+        pass
+
+
+class LayerType(Enum):
+    video = 0
+    presentation = 1
+    background = 2
+    image = 3
+
+
 class EmptyStreamProcessor:
     def process_stream(self):
         pass
@@ -177,7 +345,10 @@ class MediaDataLayer_EXP(object):
             'rgb_buffer_cuda': None,  # USE FLOAT RGB REPRESENTATION
             'alpha_cuda': None,
             'global_time': 0.,
-            'rois': dict(),
+            'rois': {
+                'person_region': np.array([-1, -1, -1, -1], dtype=np.int32),
+                'face': np.array([-1, -1, -1, -1], dtype=np.int32),
+            },
             'keypoints': dict(),
             'events': dict(),
             'shared_rois': dict(),
@@ -283,12 +454,14 @@ class CV2WebCam(StreamInput):
             return success, frame
 
     def read_stream(self, stream):
-        success, frame = self.cap.read()
+        success, frame = self.read()
         stream['new_ready'] = success
         if self.cfg.flip:
             stream['rgb_buffer_cpu'] = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
         else:
             stream['rgb_buffer_cpu'] = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # if self.cfg.device == DeviceType.cuda:
+        #     stream['cuda_buffer_gpu'] = to_tensor(stream['rgb_buffer_cpu']) / 255.
 
     def close(self):
         self.cap.release()
@@ -326,6 +499,7 @@ class StreamOutput(object):
         pass
 
     def stream_cuda(self):
+        #while not False: #StopToken:
         if self.events:
             for l in self.layers:
                 l.world_act(self.events)
