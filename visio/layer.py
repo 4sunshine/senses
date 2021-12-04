@@ -5,6 +5,7 @@ import cv2
 
 from torchvision.transforms.functional import to_tensor
 from types import MappingProxyType
+from typing import Union
 
 from dataclasses import dataclass
 from enum import Enum
@@ -38,6 +39,12 @@ class BidirectionalIterator(object):
             raise StopIteration
         return self.collection[self._index]
 
+    def get(self, item=None):
+        if isinstance(item, str):
+            return getattr(self.collection[self.id()], item)
+        else:
+            return self.collection[self.id()]
+
     def id(self):
         return self._index - 1
 
@@ -67,12 +74,12 @@ class RegionType(Enum):
     drawing_box = 25
 
 
-class EventType(Enum):
-    keypress = 30
-    born = 31
-    time_passed = 32
-    destroyed = 33
-    slide_about = 34  # CONTENT TYPE
+# class EventType(Enum):
+#     keypress = 30
+#     born = 31
+#     time_passed = 32
+#     destroyed = 33
+#     slide_about = 34  # CONTENT TYPE
 
 
 @dataclass
@@ -118,16 +125,16 @@ class RVMAlpha(AlphaSource):
 
     @torch.no_grad()
     def process_stream(self, stream):  # CHECK DEVICE LATER
-        if stream['rgb_buffer_cuda'] is not None:
-            source = stream['rgb_buffer_cuda'].unsqueeze(0)
-            fgr, pha, *self._rec = self.model(source, *self._rec, self._downsample_ratio)
-        else:
-            if stream['rgb_buffer'] is not None:
-                source = to_tensor(stream['rgb_buffer']).unsqueeze(0).cuda()
-                fgr, pha, *self._rec = self.model(source, *self._rec, self._downsample_ratio)
-                stream['rgb_buffer_cuda'] = fgr[0]
-            else:
-                pha = [None]
+        # if stream['rgb_buffer_cuda'] is not None:
+        #     source = stream['rgb_buffer_cuda'].unsqueeze(0)
+        #     fgr, pha, *self._rec = self.model(source, *self._rec, self._downsample_ratio)
+        # else:
+        # if stream['rgb_buffer_cpu'] is not None:
+        source = to_tensor(stream['rgb_buffer_cpu']).unsqueeze_(0).cuda()
+        fgr, pha, *self._rec = self.model(source, *self._rec, self._downsample_ratio)
+        stream['rgb_buffer_cuda'] = fgr[0]
+        # else:
+        #     pha = [None]
         stream['alpha_cuda'] = pha[0]
 
 
@@ -252,12 +259,12 @@ class ColorGridCUDAEffect(EffectSource):
         self.color = torch.tensor(self.cfg.color, dtype=torch.float32, device='cuda') / 255.
 
     def process_stream(self, stream):
-        image = stream['rgb_buffer_cuda']
-        if len(image.shape) > 2:
-            if self.cfg.apply_x:
-                image[:3, :, ::self.cfg.step_x] = self.color[:, None, None]
-            if self.cfg.apply_y:
-                image[:3, ::self.cfg.step_y, :] = self.color[:, None, None]
+        # image = stream['rgb_buffer_cuda']
+        # if len(image.shape) > 2:
+        if self.cfg.apply_x:
+            stream['rgb_buffer_cuda'][:3, :, ::self.cfg.step_x] = self.color[:, None, None]
+        if self.cfg.apply_y:
+            stream['rgb_buffer_cuda'][:3, ::self.cfg.step_y, :] = self.color[:, None, None]
 
 
 class EffectType(Enum):
@@ -316,108 +323,11 @@ class Keypress(Event):
         pass
 
 
-class LayerType(Enum):
-    video = 0
-    presentation = 1
-    background = 2
-    image = 3
-
-
 class EmptyStreamProcessor:
-    def process_stream(self):
+    def process_stream(self, stream):
         pass
 
-
-class MediaDataLayer_EXP(object):
-    def __init__(self, cfg, global_start_time=None):
-        self.cfg = cfg
-        assert isinstance(cfg.transparency, list)
-        self.stream_source = None
-        self.summary = None  # SHORT DESCRIPTION OR EMBEDDING BERT FOR EXAMPLE
-        self.transparency_source, self.transparency_configs = self.init_source('transparency', cfg.transparency)  # LIST OF ALPHA SOURCES
-        self.region_source, self.region_configs = self.init_source('region', cfg.region)
-        self.effect_source, self.effect_configs = self.init_source('effect', cfg.effect)
-        self.event_source, self.event_configs = self.init_source('event', cfg.event)
-
-        self._stream = {
-            'rgb_buffer_cpu': np.zeros(cfg.size[::-1] + (3,), dtype=np.uint8),
-            'alpha_cpu': np.ones(cfg.size[::-1] + (1,), dtype=np.float32),
-            'rgb_buffer_cuda': None,  # USE FLOAT RGB REPRESENTATION
-            'alpha_cuda': None,
-            'global_time': 0.,
-            'rois': {
-                'person_region': np.array([-1, -1, -1, -1], dtype=np.int32),
-                'face': np.array([-1, -1, -1, -1], dtype=np.int32),
-            },
-            'keypoints': dict(),
-            'events': dict(),
-            'shared_rois': dict(),
-            'shared_keypoints': dict(),
-            'shared_events': dict(),
-            'data': dict(),
-            'shared_data': dict(),
-            'local_start': time.time(),
-            'global_start': time.time() if global_start_time is None else global_start_time,
-            'current_index': 0,
-            'tick': 0,
-            'new_ready': True,
-        }
-
-        self._local_start = self._stream['local_start']
-        self._global_start = self._stream['global_start']
-
-    def _do_stream(self):
-        self.stream_source.read_stream(self._stream)
-        self.transparency_source.process_stream(self._stream)
-        self.region_source.process_stream(self._stream)
-        self.event_source.process_stream(self._stream)
-
-    def cuda_render(self):
-        self._do_stream()
-        return self._stream['rgb_buffer_cuda'], self._stream['alpha_cuda'],\
-               self._stream['shared_rois'], self._stream['shared_keypoints'], self._stream['shared_events']
-
-    def world_act(self, regions, keypoints, events):
-        pass
-
-    def world_feedback(self, feedback):
-        pass
-
-    def start_time(self):
-        return self._stream['local_start']
-
-    def time_since_local_start(self):
-        return time.time() - self._local_start
-
-    def time_since_global_start(self):
-        return time.time() - self._global_start
-
-    def tick(self):
-        return self._stream['tick']
-
-    @staticmethod
-    def init_alpha(cfg):
-        alpha_configs = BidirectionalIterator(cfg)
-        alpha_source_cfg = next(alpha_configs)
-        alpha_source = TRANSPARENCY[alpha_source_cfg.solution](alpha_source_cfg)
-        return alpha_source, alpha_configs
-
-    @staticmethod
-    def init_source(attribute, cfg):
-        assert attribute in ('transparency', 'region', 'effect', 'event')
-        if len(cfg) > 0:
-            configs = BidirectionalIterator(cfg)
-            source_cfg = next(configs)
-            source = globals()[attribute.upper()][source_cfg.solution](source_cfg)
-            return source, configs
-        else:
-            return EmptyStreamProcessor(), BidirectionalIterator([])
-
-    def update_source(self, attribute, next=True):
-        assert attribute in ('transparency', 'region', 'effect', 'event')
-        attribute_configs = getattr(self, '_'.join([attribute, 'configs']))
-        config = attribute_configs.next() if next else attribute_configs.prev()
-        return globals()[attribute.upper()][config.solution](config)
+# STREAM_INPUT
 
 
 class StreamInput(object):
@@ -454,7 +364,7 @@ class CV2WebCam(StreamInput):
             return success, frame
 
     def read_stream(self, stream):
-        success, frame = self.read()
+        success, frame = self.cap.read()
         stream['new_ready'] = success
         if self.cfg.flip:
             stream['rgb_buffer_cpu'] = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
@@ -465,6 +375,134 @@ class CV2WebCam(StreamInput):
 
     def close(self):
         self.cap.release()
+
+
+class LayerType(Enum):
+    video = 0
+    presentation = 1
+    background = 2
+    image = 3
+
+
+
+STREAM = defaults_mapping(
+    {
+        LayerType.video: CV2WebCam,
+    }
+)
+
+
+@dataclass
+class VideoDefaults:
+    input_id: int = 0
+    solution = LayerType.video
+    window_name: str = 'video_input'
+    size: Union[int, int] = (1280, 720)
+    origin: Union[int, int] = (0, 0)
+    margins: Union[int, int] = (0, 0)
+    window_position: Union[int, int] = (600, 0)
+    flip: bool = True
+    file: str = ''
+    fps: int = 25
+    rgb: bool = True
+    audio_device: str = 'hw:2,0'
+    output_filename: str = 'out.mp4'
+    #alpha_source: AlphaSource = RVMAlpha
+
+
+
+class MediaDataLayer_EXP(object):
+    def __init__(self, cfg, global_start_time=None):
+        self.cfg = cfg
+        assert isinstance(cfg.transparency, list)
+        self.stream_source, self.stream_config = self.init_source('stream', cfg.stream)
+        self.summary = None  # SHORT DESCRIPTION OR EMBEDDING BERT FOR EXAMPLE
+        self.transparency_source, self.transparency_configs = self.init_source('transparency', cfg.transparency)  # LIST OF ALPHA SOURCES
+        self.region_source, self.region_configs = self.init_source('region', cfg.region)
+        self.effect_source, self.effect_configs = self.init_source('effect', cfg.effect)
+        self.event_source, self.event_configs = self.init_source('event', cfg.event)
+
+        self._stream = {
+            'rgb_buffer_cpu': np.zeros(self.stream_config.get().size[::-1] + (3,), dtype=np.uint8),
+            'alpha_cpu': np.ones(self.stream_config.get().size[::-1] + (1,), dtype=np.float32),
+            'rgb_buffer_cuda': None,  # USE FLOAT RGB REPRESENTATION
+            'alpha_cuda': None,
+            'global_time': 0.,
+            'rois': {
+                'person_region': np.array([-1, -1, -1, -1], dtype=np.int32),
+                'face': np.array([-1, -1, -1, -1], dtype=np.int32),
+            },
+            'keypoints': dict(),
+            'events': dict(),
+            'shared_rois': dict(),
+            'shared_keypoints': dict(),
+            'shared_events': dict(),
+            'data': dict(),
+            'shared_data': dict(),
+            'local_start': time.time(),
+            'global_start': time.time() if global_start_time is None else global_start_time,
+            'current_index': 0,
+            'tick': 0,
+            'new_ready': True,
+        }
+
+        self._local_start = self._stream['local_start']
+        self._global_start = self._stream['global_start']
+
+    def _do_stream(self):
+        self.stream_source.read_stream(self._stream)
+        self.transparency_source.process_stream(self._stream)
+        self.region_source.process_stream(self._stream)
+        self.event_source.process_stream(self._stream)
+        self.effect_source.process_stream(self._stream)
+
+    def render_cuda(self):
+        self._do_stream()
+        return self._stream['rgb_buffer_cuda'].clone(), self._stream['alpha_cuda'].clone()
+
+    def world_act(self, regions, keypoints, events):
+        pass
+
+    def world_feedback(self, feedback):
+        pass
+
+    def start_time(self):
+        return self._stream['local_start']
+
+    def time_since_local_start(self):
+        return time.time() - self._local_start
+
+    def time_since_global_start(self):
+        return time.time() - self._global_start
+
+    def tick(self):
+        return self._stream['tick']
+
+    @staticmethod
+    def init_alpha(cfg):
+        alpha_configs = BidirectionalIterator(cfg)
+        alpha_source_cfg = next(alpha_configs)
+        alpha_source = TRANSPARENCY[alpha_source_cfg.solution](alpha_source_cfg)
+        return alpha_source, alpha_configs
+
+    @staticmethod
+    def init_source(attribute, cfg):
+        assert attribute in ('transparency', 'region', 'effect', 'event', 'stream')
+        if cfg:
+            configs = BidirectionalIterator(cfg)
+            source_cfg = configs.next()
+            source = globals()[attribute.upper()][source_cfg.solution](source_cfg)
+            print(attribute)
+            print(source)
+            return source, configs
+        else:
+            return EmptyStreamProcessor(), BidirectionalIterator([])
+
+    def update_source(self, attribute, next=True):
+        assert attribute in ('transparency', 'region', 'effect', 'event')
+        attribute_configs = getattr(self, '_'.join([attribute, 'configs']))
+        config = attribute_configs.next() if next else attribute_configs.prev()
+        return globals()[attribute.upper()][config.solution](config)
 
 
 class StreamOutput(object):
@@ -498,28 +536,82 @@ class StreamOutput(object):
     def stream_cpu(self):
         pass
 
-    def stream_cuda(self):
-        #while not False: #StopToken:
-        if self.events:
-            for l in self.layers:
-                l.world_act(self.events)
-        # CLEAN EVENTS
+    def layers_process_cuda(self):
         result = None
         for l in self.layers:
-            layer, alpha, shared_rois, shared_keypoints, shared_events = l.render()
-            self.events += shared_events
-            if result is None or alpha is None:
-                result = layer
+            layer, alpha = l.render_cuda()
+            # self.events += shared_events
+            # result = layer * alpha
+            if result is None:
+                if alpha is None:
+                    result = layer
+                else:
+                    result = layer * alpha
             else:
                 result = layer * alpha + result * (1 - alpha)
+        return result.mul(255).byte().cpu().permute(1, 2, 0).numpy()
+
+    def stream_cuda(self):
+        #while not False: #StopToken:
+        while True:
+            # if self.events:
+            #     for l in self.layers:
+            #         l.world_act(self.events)
+            # CLEAN EVENTS
+            start = time.time()
+            result = self.layers_process_cuda()
+            print((1 / (time.time() - start)))
+            self.show(result)
+
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
 
 
 @dataclass
 class LayerConfig:
     name: str = 'default_layer'
-    stream: str = None
+    stream: List[SourceDefaultConfig] = None
     transparency: List[SourceDefaultConfig] = None
     region: List[SourceDefaultConfig] = None
     effect: List[SourceDefaultConfig] = None
     event: List[SourceDefaultConfig] = None
+
+@dataclass
+class StreamOutputConfig:
+    name = ''
+    device = DeviceType.cuda
+    url = []  # SOURCE OF URLS
+    input_id: int = 0
+    solution = LayerType.video
+    window_name: str = 'video_input'
+    size: Union[int, int] = (1280, 720)
+    origin: Union[int, int] = (0, 0)
+    margins: Union[int, int] = (0, 0)
+    window_position: Union[int, int] = (600, 0)
+    flip: bool = True
+    file: str = ''
+    fps: int = 25
+    rgb: bool = True
+    audio_device: str = 'hw:2,0'
+    output_filename: str = 'out.mp4'
+
+
+def test_layers():
+    stream_cfg = VideoDefaults()
+    transp_cfg = TransparencyConfig()
+    region_cfg = RegionConfig()
+    effect_cfg = EffectConfig()
+    print(effect_cfg)
+    event_cfg = None  # WAIT FOR TO ITERATE OVER
+    cfg = LayerConfig(stream=[stream_cfg],
+                      transparency=[transp_cfg],
+                      region=[region_cfg],
+                      effect=[effect_cfg],
+                      event=event_cfg)
+    layer_1 = MediaDataLayer_EXP(cfg)
+    out_cfg = StreamOutputConfig()
+    broad = StreamOutput(out_cfg, [layer_1])
+    broad.stream()
+    # layer_1._do_stream()
+
 
