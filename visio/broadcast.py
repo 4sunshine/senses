@@ -1,0 +1,161 @@
+import cv2
+import torch
+import time
+import subprocess
+
+from source import Device
+from typing import Union
+from dataclasses import dataclass
+from enum import Enum
+
+
+class BroadcastType(Enum):
+    window = 0
+    av = 1
+    fake_cam = 2
+
+
+class Broadcast(object):
+    def __init__(self, layers, cfg=None):
+        self.cfg = self.default_config() if cfg is None else cfg
+        self.layers = self.init_layers(layers)
+
+    def default_config(self):
+        return None
+
+    def init_layers(self, layers):
+        return layers
+
+    def close(self):
+        for layer in self.layers:
+            layer.close()
+
+    def send(self, image):
+        pass
+
+    def broadcast(self):
+        if self.cfg.device == Device.cuda:
+            with torch.no_grad():
+                self.broadcast_cuda()
+        else:
+            self.broadcast_cpu()
+
+    def broadcast_cuda(self):
+        while True:
+            start = time.time()  # LATER ADD TIMING OPT
+            result = self.layers_process_cuda()
+            print((1 / (time.time() - start)))
+            self.send(result)
+
+            if cv2.waitKey(1) & 0xFF == 27:
+                self.close()
+                break
+
+    def broadcast_cpu(self):
+        pass
+
+    def layers_process_cuda(self):
+        result = None
+        for l in self.layers:
+            layer, alpha = l.render_cuda()
+            # self.events += shared_events
+            # result = layer * alpha
+            if result is None:
+                if alpha is None:
+                    result = layer
+                else:
+                    result = layer * alpha
+            else:
+                result = layer * alpha + result * (1 - alpha)
+        return result.mul(255).byte().cpu().permute(1, 2, 0).numpy()
+
+
+@dataclass
+class BroadcastWindowConfig:
+    name = 'broadcast_window'
+    device = Device.cuda
+    solution = BroadcastType.window
+    window_name: str = 'video_input'
+    window_position: Union[int, int] = (600, 0)
+    fps: int = 25
+    rgb: bool = True
+
+
+class BroadcastWindow(Broadcast):
+    def __init__(self, layers, cfg=None):
+        super(BroadcastWindow, self).__init__(cfg, layers)
+        self.window_name = self.cfg.window_name
+        cv2.namedWindow(self.window_name)
+        self._x, self._y = self.cfg.window_position
+
+    def default_config(self):
+        return BroadcastWindowConfig()
+
+    def close(self):
+        super(BroadcastWindow, self).close()
+        cv2.destroyAllWindows()
+
+    def send(self, image):
+        cv2.moveWindow(self.window_name, self._x, self._y)
+        cv2.imshow(self.window_name, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+
+
+@dataclass
+class AVBroadcastConfig:
+    name = 'avbroadcast'
+    device = Device.cuda
+    url = []  # SOURCE OF URLS
+    input_id: int = 0
+    solution = BroadcastType.av
+    window_name: str = 'video_input'
+    size: Union[int, int] = (1280, 720)
+    window_position: Union[int, int] = (600, 0)
+    fps: int = 25
+    audio_device: str = 'hw:2,0'
+    output_filename: str = 'out.mp4'
+
+
+class AVBroadcast(BroadcastWindow):
+    def __init__(self, layers, cfg=None):
+        super(AVBroadcast, self).__init__(layers, cfg)
+        command = ['ffmpeg',
+                   '-y',
+                   # INPUT VIDEO STREAM
+                   '-f', 'rawvideo',
+                   '-vcodec', 'rawvideo',
+                   '-s', f'{cfg.size[0]}x{cfg.size[1]}',
+                   '-pix_fmt', 'rgb24',  # 'bgr24'
+                   '-use_wallclock_as_timestamps', '1',
+                   '-i', '-',
+                   # INPUT AUDIO STREAM
+                   '-f', 'alsa',
+                   '-ac', '1',
+                   # '-channels', '1',
+                   # '-sample_rate', '44100',
+                   '-i', cfg.audio_device,
+                   '-acodec', 'aac',
+                   # OUTPUT VIDEO OPTIONS
+                   '-vcodec', 'libx264',
+                   '-preset', 'ultrafast',
+                   # '-tune', 'film',
+                   '-qp', '0',
+                   # OUTPUT AUDIO OPTIONS
+                   '-acodec', 'mp2',
+                   cfg.output_filename]
+
+        self.process = subprocess.Popen(command, stdin=subprocess.PIPE)
+
+    def default_config(self):
+        return AVBroadcastConfig()
+
+    def send(self, image):
+        self.process.stdin.write(image.tobytes())
+        if self.cfg.window_show:
+            super(AVBroadcast, self).send(image)
+
+    def close(self):
+        self.process.stdin.close()
+        self.process.terminate()
+        self.process.wait()
+        super(AVBroadcast, self).close()
+        print(self.process.poll())

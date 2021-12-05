@@ -3,19 +3,11 @@ import time
 import torch
 import cv2
 
-from types import MappingProxyType
 from typing import Union
-
 from dataclasses import dataclass
-from enum import Enum
 
-from typing import List
-
-from detect.face import MPSimpleFaceDetector
-
-
-def defaults_mapping(cfg):
-    return MappingProxyType(cfg)
+from visio.factory import SourceFactory
+from visio.source import Device
 
 
 class BidirectionalIterator(object):
@@ -51,94 +43,17 @@ class BidirectionalIterator(object):
         return self
 
 
-# STREAM_INPUT
-
-
-class StreamInput(object):
-    def __init__(self, cfg):
-        self.cfg = cfg
-
-    def read_stream(self, stream):
-        stream['new_ready'] = False
-
-    def close(self):
-        pass
-
-
-class CV2WebCam(StreamInput):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-        self.cap = cv2.VideoCapture(self.cfg.input_id)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.size[0])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.size[1])
-
-    def read(self):
-        success, frame = self.cap.read()
-        if success:
-            if not self.cfg.flip and self.cfg.rgb:
-                return success, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            elif self.cfg.flip and self.cfg.rgb:
-                return success, cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
-            elif self.cfg.flip and not self.cfg.rgb:
-                return success, cv2.flip(frame, 1)
-            else:
-                return success, frame
-        else:
-            return success, frame
-
-    def read_stream(self, stream):
-        success, frame = self.cap.read()
-        stream['new_ready'] = success
-        if self.cfg.flip:
-            stream['rgb_buffer_cpu'] = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
-        else:
-            stream['rgb_buffer_cpu'] = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # if self.cfg.device == DeviceType.cuda:
-        #     stream['cuda_buffer_gpu'] = to_tensor(stream['rgb_buffer_cpu']) / 255.
-
-    def close(self):
-        self.cap.release()
-
-
-class StreamType(Enum):
-    Video = 0
-    Presentation = 1
-    Text = 2
-    Image = 3
-    WebCam = 4
-
-
-
-
-STREAM = defaults_mapping(
-    {
-        StreamType.Video: CV2WebCam,
-    }
-)
-
-
 @dataclass
-class VideoDefaults:
-    input_id: int = 0
-    solution = StreamType.WebCam
-    type = SourceType.stream
-    window_name: str = 'video_input'
-    size: Union[int, int] = (1280, 720)
-    origin: Union[int, int] = (0, 0)
-    margins: Union[int, int] = (0, 0)
-    window_position: Union[int, int] = (600, 0)
-    flip: bool = True
-    file: str = ''
-    fps: int = 25
-    rgb: bool = True
-    audio_device: str = 'hw:2,0'
-    output_filename: str = 'out.mp4'
-    #alpha_source: AlphaSource = RVMAlpha
+class MediaLayerConfig:
+    name: str = 'default_layer'
+    stream: list = None
+    transparency: list = None
+    region: list = None
+    effect: list = None
+    event: list = None
 
 
-
-class MediaDataLayer_EXP(object):
+class MediaLayer(object):
     def __init__(self, cfg, global_start_time=None, source_factory=SourceFactory()):
         self.cfg = cfg
         self.SF = source_factory
@@ -183,6 +98,7 @@ class MediaDataLayer_EXP(object):
         self.region_source.process_stream(self._stream)
         self.event_source.process_stream(self._stream)
         self.effect_source.process_stream(self._stream)
+        self._stream['tick'] += 1
 
     def render_cuda(self):
         self._do_stream()
@@ -224,118 +140,26 @@ class MediaDataLayer_EXP(object):
             return self.SF.empty_source()
 
 
-class StreamOutput(object):
-    def __init__(self, cfg, layers):
-        self.cfg = cfg
-        self.layers = self.init_layers(layers)
-        self.window_name = self.cfg.window_name
-        cv2.namedWindow(self.window_name)
-        self._x, self._y = self.cfg.window_position
-        # OWN EVENTS SHOULD BE LIKE KEY PRESSED
-        self.events = None
-
-    def init_layers(self, layers):
-        return layers
-
-    def close(self):
-        for l in self.layers:
-            l.close()
-        cv2.destroyAllWindows()
-
-    def show(self, image):
-        cv2.moveWindow(self.window_name, self._x, self._y)
-        cv2.imshow(self.window_name, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-
-    def stream(self):
-        if self.cfg.device == DeviceType.cuda:
-            with torch.no_grad():
-                self.stream_cuda()
-        else:
-            self.stream_cpu()
-
-    def stream_cpu(self):
-        pass
-
-    def layers_process_cuda(self):
-        result = None
-        for l in self.layers:
-            layer, alpha = l.render_cuda()
-            # self.events += shared_events
-            # result = layer * alpha
-            if result is None:
-                if alpha is None:
-                    result = layer
-                else:
-                    result = layer * alpha
-            else:
-                result = layer * alpha + result * (1 - alpha)
-        return result.mul(255).byte().cpu().permute(1, 2, 0).numpy()
-
-    def stream_cuda(self):
-        #while not False: #StopToken:
-        while True:
-            # if self.events:
-            #     for l in self.layers:
-            #         l.world_act(self.events)
-            # CLEAN EVENTS
-            start = time.time()
-            result = self.layers_process_cuda()
-            print((1 / (time.time() - start)))
-            self.show(result)
-
-            if cv2.waitKey(1) & 0xFF == 27:
-                break
-
-
-@dataclass
-class LayerConfig:
-    name: str = 'default_layer'
-    stream: List[SourceDefaultConfig] = None
-    transparency: List[SourceDefaultConfig] = None
-    region: List[SourceDefaultConfig] = None
-    effect: List[SourceDefaultConfig] = None
-    event: List[SourceDefaultConfig] = None
-
-@dataclass
-class StreamOutputConfig:
-    name = ''
-    device = DeviceType.cuda
-    url = []  # SOURCE OF URLS
-    input_id: int = 0
-    solution = StreamType.WebCam
-    window_name: str = 'video_input'
-    size: Union[int, int] = (1280, 720)
-    origin: Union[int, int] = (0, 0)
-    margins: Union[int, int] = (0, 0)
-    window_position: Union[int, int] = (600, 0)
-    flip: bool = True
-    file: str = ''
-    fps: int = 25
-    rgb: bool = True
-    audio_device: str = 'hw:2,0'
-    output_filename: str = 'out.mp4'
-
-
-def test_layers():
-    stream_cfg = VideoDefaults()
-    transp_cfg = TransparencyConfig()
-    region_cfg = RegionConfig()
-    effect_cfg = EffectConfig()
-    print(str(SourceType.transparency))
-    effect_cfg.color = (0, 255, 0)
-    effect_cfg.step_x = 20
-    effect_cfg.step_y = 20
-    print(effect_cfg)
-    event_cfg = None  # WAIT FOR TO ITERATE OVER
-    cfg = LayerConfig(stream=[stream_cfg],
-                      transparency=[transp_cfg],
-                      region=[region_cfg],
-                      effect=[effect_cfg],
-                      event=event_cfg)
-    layer_1 = MediaDataLayer_EXP(cfg)
-    out_cfg = StreamOutputConfig()
-    broad = StreamOutput(out_cfg, [layer_1])
-    broad.stream()
-    # layer_1._do_stream()
+# def test_layers():
+#     stream_cfg = VideoDefaults()
+#     transp_cfg = TransparencyConfig()
+#     region_cfg = RegionConfig()
+#     effect_cfg = EffectConfig()
+#     print(str(SourceType.transparency))
+#     effect_cfg.color = (0, 255, 0)
+#     effect_cfg.step_x = 20
+#     effect_cfg.step_y = 20
+#     print(effect_cfg)
+#     event_cfg = None  # WAIT FOR TO ITERATE OVER
+#     cfg = LayerConfig(stream=[stream_cfg],
+#                       transparency=[transp_cfg],
+#                       region=[region_cfg],
+#                       effect=[effect_cfg],
+#                       event=event_cfg)
+#     layer_1 = MediaDataLayer_EXP(cfg)
+#     out_cfg = StreamOutputConfig()
+#     broad = StreamOutput(out_cfg, [layer_1])
+#     broad.stream()
+#     # layer_1._do_stream()
 
 
