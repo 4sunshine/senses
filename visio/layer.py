@@ -66,8 +66,8 @@ class MediaLayer(object):
         self.event_source, self.event_configs = self.init_source(cfg.event)
 
         self._stream = {
-            'rgb_buffer_cpu': np.zeros(self.stream_config.get().size[::-1] + (3,), dtype=np.uint8),
-            'alpha_cpu': np.ones(self.stream_config.get().size[::-1] + (1,), dtype=np.float32),
+            'rgb_buffer_cpu': np.zeros(self.stream_source.cfg.size[::-1] + (3,), dtype=np.uint8),
+            'alpha_cpu': np.ones(self.stream_source.cfg.size[::-1] + (1,), dtype=np.float32),
             'rgb_buffer_cuda': None,  # USE FLOAT RGB REPRESENTATION
             'alpha_cuda': None,
             'global_time': 0.,
@@ -102,7 +102,10 @@ class MediaLayer(object):
 
     def render_cuda(self):
         self._do_stream()
-        return self._stream['rgb_buffer_cuda'].clone(), self._stream['alpha_cuda'].clone()
+        if self._stream['alpha_cuda'] is None:
+            return self._stream['rgb_buffer_cuda'].clone(), None
+        else:
+            return self._stream['rgb_buffer_cuda'].clone(), self._stream['alpha_cuda'].clone()
 
     def world_act(self, regions, keypoints, events):
         pass
@@ -118,6 +121,13 @@ class MediaLayer(object):
 
     def time_since_global_start(self):
         return time.time() - self._global_start
+
+    def close(self):
+        self.stream_source.close()
+        self.transparency_source.close()
+        self.effect_source.close()
+        self.event_source.close()
+        self.region_source.close()
 
     def tick(self):
         return self._stream['tick']

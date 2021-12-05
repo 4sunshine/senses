@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Union
 
 import cv2
+import torch
 
 
 __all__ = ['Stream', 'WebCamCV2', 'WebCamCV2Config', 'STREAM_MAPPING']
@@ -20,6 +21,11 @@ class Stream(Enum):
 class StreamReader(object):
     def __init__(self, cfg=None):
         self.cfg = self.default_config() if cfg is None else cfg
+        self._tick = -1
+
+    def tick(self):
+        self._tick += 1
+        return self._tick
 
     def default_config(self):
         return None
@@ -85,15 +91,40 @@ class WebCamCV2(StreamReader):
         self.cap.release()
 
 
-# EXPERIMENTAL. REVIEW IT LATER
-class SelfEvolution(StreamReader):
+@dataclass
+class EvolutionConfig:
+    input_id = 0
+    solution = Stream.Evolution
+    type = SourceType.stream
+    url = ''
+    device = Device.cuda
+    name = 'evolution'
+    size = (1280, 720)
+    initial_state = 'white'  # LATER CONSIDER OTHER STATES ('white', 'noise', 'black')
+
+
+class Evolution(StreamReader):
     def __init__(self, cfg=None):
         super().__init__(cfg)
 
     def default_config(self):
-        return WebCamCV2Config()
+        return EvolutionConfig()
+
+    def initial_state(self):
+        if self.cfg.device == Device.cuda:
+            if self.cfg.initial_state == 'white':
+                state = torch.ones((3,) + self.cfg.size[::-1], dtype=torch.float32, device='cuda')
+            elif self.cfg.initial_state == 'noise':
+                state = torch.rand((3,) + self.cfg.size[::-1], dtype=torch.float32, device='cuda')
+            else:
+                state = torch.zeros((3,) + self.cfg.size[::-1], dtype=torch.float32, device='cuda')
+        else:
+            state = None
+        return state, None
 
     def read_stream(self, stream):
+        if self.tick() == 0:
+            stream['rgb_buffer_cuda'], stream['alpha_cuda'] = self.initial_state()
         stream['new_ready'] = True
         # if self.cfg.device == DeviceType.cuda:
         #     stream['cuda_buffer_gpu'] = to_tensor(stream['rgb_buffer_cpu']) / 255.
@@ -101,5 +132,6 @@ class SelfEvolution(StreamReader):
 
 STREAM_MAPPING = {
     Stream.WebCam: WebCamCV2,
+    Stream.Evolution: Evolution,
 }
 

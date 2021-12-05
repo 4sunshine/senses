@@ -29,6 +29,7 @@ class SourceFactory:
         )
         return all_sources
 
+
     # CHECK DEFAULTS
     def init_source(self, config):
         if config is None:
@@ -38,6 +39,17 @@ class SourceFactory:
                 assert not isinstance(config[0], list)
                 sources = [self.init_source(cfg) for cfg in config]
                 return Composition(sources)
+            except Exception as e:
+                print(f'Incorrect config:')
+                print(config)
+                print('* * *')
+                print(e)
+                return self.empty_source()
+        elif isinstance(config, tuple):
+            try:
+                assert len(config) == 2
+                source_type, solution = config
+                return self.all_sources[source_type][solution](None)
             except Exception as e:
                 print(f'Incorrect config:')
                 print(config)

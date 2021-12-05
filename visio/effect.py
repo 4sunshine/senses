@@ -65,7 +65,7 @@ class ColorGridCUDAConfig:
     invert = False
     sqrt = False
     flip = False
-    colormap = 'nipy_spectral'
+    colormap = 'tab20c'  #'plasma'#'nipy_spectral'
     target = Region.Body  # Could be face, body, or None
 
 
@@ -78,7 +78,9 @@ class GradientColorizeCUDA(EffectSource):
         return ColorGridCUDAConfig()
 
     def process_stream(self, stream):
-        image = stream['rgb_buffer_cuda'].copy()
+        if not stream['new_ready']:
+            return
+        image = stream['rgb_buffer_cuda'].clone()
         if self.cfg.target == Region.Body:
             bbox = stream['rois'].get('person_region', None)
         elif self.cfg.target == Region.Face:
@@ -104,10 +106,11 @@ class RandomLinesCUDAConfig:
     name = 'random_lines'
     device = Device.cuda
     apply_x = True
-    count_x = 15
-    apply_y = False
-    count_y = 15
+    count_x = 290
+    apply_y = True
+    count_y = 245
     same = True
+    change_every = 1
 
 
 class RandomLinesCUDA(EffectSource):
@@ -123,6 +126,8 @@ class RandomLinesCUDA(EffectSource):
         return RandomLinesCUDAConfig()
 
     def process_stream(self, stream):
+        if not stream['new_ready']:
+            return
         h, w = stream['rgb_buffer_cuda'].shape[-2:]
         if self.tick() % self.cfg.change_every == 0:
             if self.cfg.apply_x:
@@ -165,6 +170,8 @@ class ChannelShift(EffectSource):
         return ChannelShiftConfig()
 
     def process_stream(self, stream):
+        if not stream['new_ready']:
+            return
         # CHECK LATER WITH TORCH ROLL
         if self.cfg.apply_x:
             stream['rgb_buffer_cuda'][0, :, self.cfg.shift_x:] =\

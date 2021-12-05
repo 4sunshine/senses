@@ -3,7 +3,7 @@ import torch
 import time
 import subprocess
 
-from source import Device
+from visio.source import Device
 from typing import Union
 from dataclasses import dataclass
 from enum import Enum
@@ -83,7 +83,7 @@ class BroadcastWindowConfig:
 
 class BroadcastWindow(Broadcast):
     def __init__(self, layers, cfg=None):
-        super(BroadcastWindow, self).__init__(cfg, layers)
+        super(BroadcastWindow, self).__init__(layers, cfg)
         self.window_name = self.cfg.window_name
         cv2.namedWindow(self.window_name)
         self._x, self._y = self.cfg.window_position
@@ -111,8 +111,9 @@ class AVBroadcastConfig:
     size: Union[int, int] = (1280, 720)
     window_position: Union[int, int] = (600, 0)
     fps: int = 25
-    audio_device: str = 'hw:2,0'
+    audio_device: str = 'hw:1,0'
     output_filename: str = 'out.mp4'
+    window_show = True
 
 
 class AVBroadcast(BroadcastWindow):
@@ -123,7 +124,7 @@ class AVBroadcast(BroadcastWindow):
                    # INPUT VIDEO STREAM
                    '-f', 'rawvideo',
                    '-vcodec', 'rawvideo',
-                   '-s', f'{cfg.size[0]}x{cfg.size[1]}',
+                   '-s', f'{self.cfg.size[0]}x{self.cfg.size[1]}',
                    '-pix_fmt', 'rgb24',  # 'bgr24'
                    '-use_wallclock_as_timestamps', '1',
                    '-i', '-',
@@ -132,7 +133,7 @@ class AVBroadcast(BroadcastWindow):
                    '-ac', '1',
                    # '-channels', '1',
                    # '-sample_rate', '44100',
-                   '-i', cfg.audio_device,
+                   '-i', self.cfg.audio_device,
                    '-acodec', 'aac',
                    # OUTPUT VIDEO OPTIONS
                    '-vcodec', 'libx264',
@@ -141,7 +142,7 @@ class AVBroadcast(BroadcastWindow):
                    '-qp', '0',
                    # OUTPUT AUDIO OPTIONS
                    '-acodec', 'mp2',
-                   cfg.output_filename]
+                   self.cfg.output_filename]
 
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE)
 
