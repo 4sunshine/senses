@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-__all__ = ['SourceType', 'DeviceType', 'Enum', 'Source']
+__all__ = ['SourceType', 'Device', 'Enum', 'Source', 'SOURCE_MAPPING', 'Composition']
 
 
 class SourceType(Enum):
@@ -15,7 +15,7 @@ class SourceType(Enum):
     dummy = 6
 
 
-class DeviceType(Enum):
+class Device(Enum):
     cpu = 10
     cuda = 11
 
@@ -24,7 +24,7 @@ class DeviceType(Enum):
 class SourceDefaultConfig:
     name: str
     type: SourceType
-    device: DeviceType
+    device: Device
     url: None  # SOURCE OF URLS
     # birth: EventType = None # EVENT CLASS
     # appear: EventType = None
@@ -36,14 +36,14 @@ class SourceDefaultConfig:
 
 class Source(object):
     def __init__(self, cfg=None):
-        self.cfg = cfg if cfg is not None else self.default_config()
+        self.cfg = self.default_config() if cfg is None else cfg
         self.init_source()
 
     def default_solution(self):
         return self
 
     def default_config(self):
-        return SourceDefaultConfig(name='default', type=SourceType.dummy, device=DeviceType.cpu, url=None)
+        return SourceDefaultConfig(name='default', type=SourceType.dummy, device=Device.cpu, url=None)
 
     def init_source(self):
         pass
@@ -56,22 +56,27 @@ class Source(object):
 
 
 class Composition(Source):
-    def __init__(self, cfg):
-        assert isinstance(cfg, list)
-        types = [c.type for c in cfg]
+    def __init__(self, sources):
+        assert isinstance(sources, list)
+        configs = [s.cfg for s in sources]
+        types = [cfg.type for cfg in configs]
         assert types.count(types[0]) == len(types)
-        # sources = list(map(lambda x: ))
-        # source = globals()[attribute.upper()][source_cfg.solution](source_cfg)
-        # super(Composition, self).__init__(cfg)
-        # self.sources
-        # assert len(set())
+        super(Composition, self).__init__(cfg=configs)
+        self.sources = sources
 
     def init_source(self):
         pass
 
     def process_stream(self, stream):
-        pass
+        for s in self.sources:
+            s.process_stream(stream)
 
     def close(self):
-        pass
+        for s in self.sources:
+            s.close()
+
+
+SOURCE_MAPPING = {
+    SourceType.dummy: Source,
+}
 

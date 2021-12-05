@@ -1,16 +1,16 @@
-from visio.source_head import *
+from visio.source import *
 from dataclasses import dataclass
 
 import torch
 from torchvision.transforms.functional import to_tensor
 
 
-__all__ = ['RVMAlphaCUDA', 'RVMAlphaCUDAConfig', 'TransparencyType']
+__all__ = ['RVMAlphaCUDA', 'RVMAlphaCUDAConfig', 'Transparency', 'TRANSPARENCY_MAPPING']
 
 
 class AlphaSource(Source):
     def process_stream(self, stream):
-        if self.cfg.device == DeviceType.cuda:
+        if self.cfg.device == Device.cuda:
             if (stream['rgb_buffer_cuda'] is not None) and (stream['rgb_buffer_cuda'].shape[0] == 4):
                 stream['alpha_cuda'] = stream['rgb_buffer_cuda'][3:, ...]
         else:
@@ -18,17 +18,17 @@ class AlphaSource(Source):
                 stream['alpha_cpu'] = stream['rgb_buffer'][..., -1:]
 
 
-class TransparencyType(Enum):
+class Transparency(Enum):
     Opaque = 0
     RVMAlpha = 1
 
 
 @dataclass
 class RVMAlphaCUDAConfig:
-    solution = TransparencyType.RVMAlpha
+    solution = Transparency.RVMAlpha
     type = SourceType.transparency
     name = 'transparency'
-    device = DeviceType.cuda
+    device = Device.cuda
     url = 'visio/segmentation/rvm_mobilenetv3_fp32.torchscript'
     downsample_ratio: float = 0.25
 
@@ -51,10 +51,18 @@ class RVMAlphaCUDA(AlphaSource):
         #     fgr, pha, *self._rec = self.model(source, *self._rec, self._downsample_ratio)
         # else:
         # if stream['rgb_buffer_cpu'] is not None:
+        if not stream['new_ready']:
+            return
         source = to_tensor(stream['rgb_buffer_cpu']).unsqueeze_(0).cuda()
         fgr, pha, *self._rec = self.model(source, *self._rec, self._downsample_ratio)
         stream['rgb_buffer_cuda'] = fgr[0]
         # else:
         #     pha = [None]
         stream['alpha_cuda'] = pha[0]
+
+
+TRANSPARENCY_MAPPING = {
+    Transparency.Opaque: AlphaSource,
+    Transparency.RVMAlpha: RVMAlphaCUDA,
+}
 

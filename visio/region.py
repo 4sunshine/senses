@@ -1,14 +1,14 @@
-from visio.source_head import *
+from visio.source import *
 from dataclasses import dataclass
 
 import torch
 from detect.face import MPSimpleFaceDetector
 
 
-__all__ = ['MPFace', 'MPFaceConfig', 'PersonRegionCUDA', 'PersonRegionCUDAConfig', 'RegionType']
+__all__ = ['MPFace', 'MPFaceConfig', 'PersonRegionCUDA', 'PersonRegionCUDAConfig', 'Region', 'REGION_MAPPING']
 
 
-class RegionType(Enum):
+class Region(Enum):
     Face = 0
     Body = 1
     Text = 2
@@ -33,10 +33,10 @@ class RegionSource(Source):
 
 @dataclass
 class MPFaceConfig:
-    solution = RegionType.Face
+    solution = Region.Face
     type = SourceType.region
     name = 'face'
-    device = DeviceType.cpu
+    device = Device.cpu
     max_detections = 1
     det_conf = 0.5
     model_type = 1
@@ -53,6 +53,8 @@ class MPFace(RegionSource):
         return MPFaceConfig()
 
     def process_stream(self, stream):
+        if not stream['new_ready']:
+            return
         bbox = self.model.get_face_bbox(stream['rgb_buffer_cpu'])[0]
         stream['rois']['face'][0] = bbox[0]
         stream['rois']['face'][1] = bbox[1]
@@ -65,10 +67,10 @@ class MPFace(RegionSource):
 
 @dataclass
 class PersonRegionCUDAConfig:
-    solution = RegionType.Body
+    solution = Region.Body
     type = SourceType.region
     name = 'person'
-    device = DeviceType.cuda
+    device = Device.cuda
     threshold = 0.05
 
 
@@ -77,18 +79,16 @@ class PersonRegionCUDA(RegionSource):
         return PersonRegionCUDAConfig()
 
     def process_stream(self, stream):
+        if not stream['new_ready']:
+            return
         y, x = torch.where(stream['alpha_cuda'][0] > self.cfg.threshold)
         stream['rois']['person_region'][0] = torch.min(x)
         stream['rois']['person_region'][1] = torch.max(x)
         stream['rois']['person_region'][2] = torch.min(y)
         stream['rois']['person_region'][3] = torch.max(y)
 
-#
-# REGION = defaults_mapping(
-#     {
-#         RegionType.Face: MPFaceDetector,
-#         RegionType.Body: PersonRegionCUDA,
-#     }
-# )
-#
 
+REGION_MAPPING = {
+    Region.Face: MPFace,
+    Region.Body: PersonRegionCUDA,
+}

@@ -1,10 +1,10 @@
-from visio.source_head import *
+from visio.source import *
 from dataclasses import dataclass
 
 import torch
 
 
-__all__ = ['ColorGridCUDA', 'ColorGridCUDAConfig']
+__all__ = ['ColorGridCUDA', 'ColorGridCUDAConfig', 'EFFECT_MAPPING']
 
 
 class EffectSource(Source):
@@ -21,7 +21,7 @@ class ColorGridCUDAConfig:
     solution = Effect.Grid
     type = SourceType.effect
     name = 'effect'
-    device = DeviceType.cuda
+    device = Device.cuda
     threshold = 0.05
     apply_x = True
     apply_y = True
@@ -41,17 +41,14 @@ class ColorGridCUDA(EffectSource):
     def process_stream(self, stream):
         # image = stream['rgb_buffer_cuda']
         # if len(image.shape) > 2:
+        if not stream['new_ready']:
+            return
         if self.cfg.apply_x:
             stream['rgb_buffer_cuda'][:3, :, ::self.cfg.step_x] = self.color[:, None, None]
         if self.cfg.apply_y:
             stream['rgb_buffer_cuda'][:3, ::self.cfg.step_y, :] = self.color[:, None, None]
 
-#
-# EFFECT = defaults_mapping(
-#     {
-#         Effect.Grid: ColorGridCUDAEffect,
-#     }
-# )
 
-
-
+EFFECT_MAPPING = {
+    Effect.Grid: ColorGridCUDA,
+}

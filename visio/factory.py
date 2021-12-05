@@ -1,9 +1,11 @@
 from types import MappingProxyType
 
-from visio.source_head import *
+from visio.source import *
 from visio.effect import *
 from visio.transparency import *
 from visio.event import *
+from visio.region import *
+from visio.stream import *
 
 
 class SourceFactory:
@@ -17,44 +19,33 @@ class SourceFactory:
     def prepare_all(self, prompt=None):
         all_sources = self.defaults_mapping(
             {
-                SourceType.transparency:
-                    self.defaults_mapping(  # DEFINE DICT IN TRANSPARENCY
-                        {
-                            TransparencyType.Opaque: AlphaSource,
-                            TransparencyType.RVMAlpha: RVMAlphaCUDA,
-                        },
-                    ),
-                SourceType.region:
-                    self.defaults_mapping(
-                        {
-                            RegionType.Face: MPFaceDetector,
-                            RegionType.Body: PersonRegionCUDA,
-                        },
-                    ),
-                SourceType.effect:
-                    self.defaults_mapping(
-                        {
-                            EffectType.Grid: ColorGridCUDAEffect,
-                        }
-                    ),
-                SourceType.stream:
-                    self.defaults_mapping(
-                        {
-                            StreamType.WebCam: CV2WebCam,
-                        }
-                    ),
-                SourceType.empty:
-                    self.defaults_mapping(
-                        {
-                            EmptyType.Empty: EmptyStreamProcessor,
-                        }
-                    )
+                SourceType.transparency: TRANSPARENCY_MAPPING,
+                SourceType.region: REGION_MAPPING,
+                SourceType.effect: EFFECT_MAPPING,
+                SourceType.event: EVENT_MAPPING,
+                SourceType.stream: STREAM_MAPPING,
+                SourceType.dummy: SOURCE_MAPPING,
             }
         )
         return all_sources
 
+    # CHECK DEFAULTS
     def init_source(self, config):
-        return self.all_sources[config.type][config.solution](config)
+        if config is None:
+            return self.empty_source()
+        elif isinstance(config, list):
+            try:
+                assert not isinstance(config[0], list)
+                sources = [self.init_source(cfg) for cfg in config]
+                return Composition(sources)
+            except Exception as e:
+                print(f'Incorrect config:')
+                print(config)
+                print('* * *')
+                print(e)
+                return self.empty_source()
+        else:
+            return self.all_sources[config.type][config.solution](config)
 
     def empty_source(self):
-        return self.all_sources[SourceType.empty][EmptyType.Empty]()
+        return self.all_sources[SourceType.dummy][SourceType.dummy]()

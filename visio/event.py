@@ -1,11 +1,11 @@
-from visio.source_head import *
+from visio.source import *
 from dataclasses import dataclass
 
 
-__all__ = ['EventType', 'Keypress']
+__all__ = ['Event', 'Keypress', 'EVENT_MAPPING']
 
 
-class EventType(Enum):
+class Event(Enum):
     started = 0
     finished = 1
     appear = 2
@@ -34,3 +34,6 @@ class Keypress(EventSource):
 class EmptyStreamProcessor:
     def process_stream(self, stream):
         pass
+
+
+EVENT_MAPPING = dict()
