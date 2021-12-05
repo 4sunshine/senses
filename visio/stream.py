@@ -85,6 +85,20 @@ class WebCamCV2(StreamReader):
         self.cap.release()
 
 
+# EXPERIMENTAL. REVIEW IT LATER
+class SelfEvolution(StreamReader):
+    def __init__(self, cfg=None):
+        super().__init__(cfg)
+
+    def default_config(self):
+        return WebCamCV2Config()
+
+    def read_stream(self, stream):
+        stream['new_ready'] = True
+        # if self.cfg.device == DeviceType.cuda:
+        #     stream['cuda_buffer_gpu'] = to_tensor(stream['rgb_buffer_cpu']) / 255.
+
+
 STREAM_MAPPING = {
     Stream.WebCam: WebCamCV2,
 }

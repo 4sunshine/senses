@@ -38,9 +38,14 @@ class Source(object):
     def __init__(self, cfg=None):
         self.cfg = self.default_config() if cfg is None else cfg
         self.init_source()
+        self._tick = -1
 
     def default_solution(self):
         return self
+
+    def tick(self):
+        self._tick += 1
+        return self._tick
 
     def default_config(self):
         return SourceDefaultConfig(name='default', type=SourceType.dummy, device=Device.cpu, url=None)

@@ -141,11 +141,11 @@ class ColorConverterCUDA:
         return rgb_table, hsv_table
 
     @torch.no_grad()
-    def process_grad_grayscale(self, gray, endpoints=None, axis=1, invert=False, sqrt=False, flip=False):
+    def process_grad_grayscale(self, gray, endpoints=None, apply_x=True, invert=False, sqrt=False, flip=False):
         if len(gray.shape) >= 3:
             gray = self.rgb_to_gray(gray)
         _, h, w = gray.shape
-        dim_size = w if axis else h
+        dim_size = w if apply_x else h
         if not endpoints:
             min_x, max_x = 0, dim_size - 1
         else:
@@ -161,7 +161,7 @@ class ColorConverterCUDA:
         all_points = torch.cat([left_border, all_grad_points, right_border]).int()
         if flip:
             all_points = all_points[::-1]
-        if axis == 1:
+        if apply_x:
             all_points = all_points[None, :]
         else:
             all_points = all_points[:, None]
