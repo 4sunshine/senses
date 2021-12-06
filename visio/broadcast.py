@@ -44,8 +44,8 @@ class Broadcast(object):
         while True:
             start = time.time()  # LATER ADD TIMING OPT
             result = self.layers_process_cuda()
-            print((1 / (time.time() - start)))
             self.send(result)
+            print((1 / (time.time() - start)))
 
             if cv2.waitKey(1) & 0xFF == 27:
                 self.close()

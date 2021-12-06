@@ -3,11 +3,12 @@ import mediapipe as mp
 
 
 class MPHandsDetector:
-    def __init__(self, model_complexity=0, det_conf=0.5, min_tracking_conf=0.5):
+    def __init__(self, model_complexity=0, det_conf=0.5, min_tracking_conf=0.5, max_num_hands=2):
         self._detector = mp.solutions.hands.Hands(
             model_complexity=model_complexity,
             min_detection_confidence=det_conf,
-            min_tracking_confidence=min_tracking_conf
+            min_tracking_confidence=min_tracking_conf,
+            max_num_hands=max_num_hands,
         )
 
     def detect_on_image(self, image_path):

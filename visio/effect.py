@@ -31,9 +31,9 @@ class ColorGridCUDAConfig:
     threshold = 0.05
     apply_x = True
     apply_y = True
-    step_x = 4
-    step_y = 4
-    color = (0, 0, 0)
+    step_x = 40 #4
+    step_y = 40 #4
+    color = (0, 255, 0)
 
 
 class ColorGridCUDA(EffectSource):
@@ -56,7 +56,7 @@ class ColorGridCUDA(EffectSource):
 
 
 @dataclass
-class ColorGridCUDAConfig:
+class GradientColorizeCUDAConfig:
     solution = Effect.Colorize
     type = SourceType.effect
     name = 'colorize'
@@ -75,7 +75,7 @@ class GradientColorizeCUDA(EffectSource):
         self.color_model = ColorConverterCUDA(self.cfg.colormap)
 
     def default_config(self):
-        return ColorGridCUDAConfig()
+        return GradientColorizeCUDAConfig()
 
     def process_stream(self, stream):
         if not stream['new_ready']:
@@ -94,6 +94,7 @@ class GradientColorizeCUDA(EffectSource):
                 endpoints = bbox[0], bbox[2]
             else:
                 endpoints = bbox[1], bbox[3]
+
         stream['rgb_buffer_cuda'] = self.color_model.process_grad_grayscale(image, endpoints, self.cfg.apply_x,
                                                                             self.cfg.invert, self.cfg.sqrt,
                                                                             self.cfg.flip)

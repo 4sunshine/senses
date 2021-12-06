@@ -23,14 +23,14 @@ if __name__ == '__main__':
 
     stream = [(SourceType.stream, Stream.WebCam)]
     transp = [(SourceType.transparency, Transparency.RVMAlpha)]
-    region = [None]
-    effect = [None]
+    region = [[(SourceType.region, Region.Body), (SourceType.region, Region.Hands)]]
+    effect = [(SourceType.effect, Effect.Colorize)]
     event = [None]
     cfg_2 = MediaLayerConfig(stream=stream, transparency=transp, region=region, effect=effect, event=event)
     layer_2 = MediaLayer(cfg_2)
     layers = [layer, layer_2]
 
-    broad = AVBroadcast(layers)  #BroadcastWindow([layer, layer_2])
+    broad = BroadcastWindow([layer, layer_2])
     broad.broadcast()
 
     # import sys
