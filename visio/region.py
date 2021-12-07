@@ -123,6 +123,8 @@ class PersonRegionCUDA(RegionSource):
         if not stream['new_ready']:
             return
         y, x = torch.where(stream['alpha_cuda'][0] > self.cfg.threshold)
+        if len(y) == 0:
+            return
         stream['rois']['person_region'][0] = torch.min(x)
         stream['rois']['person_region'][1] = torch.min(y)
         stream['rois']['person_region'][2] = torch.max(x)

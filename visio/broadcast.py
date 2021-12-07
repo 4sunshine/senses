@@ -46,6 +46,9 @@ class Broadcast(object):
             result = self.layers_process_cuda()
             self.send(result)
             print((1 / (time.time() - start)))
+            #
+            # k = cv2.waitKey(1)
+            # print(k)
 
             if cv2.waitKey(1) & 0xFF == 27:
                 self.close()
@@ -87,6 +90,7 @@ class BroadcastWindow(Broadcast):
         self.window_name = self.cfg.window_name
         cv2.namedWindow(self.window_name)
         self._x, self._y = self.cfg.window_position
+        cv2.moveWindow(self.window_name, self._x, self._y)
 
     def default_config(self):
         return BroadcastWindowConfig()
@@ -96,7 +100,6 @@ class BroadcastWindow(Broadcast):
         cv2.destroyAllWindows()
 
     def send(self, image):
-        cv2.moveWindow(self.window_name, self._x, self._y)
         cv2.imshow(self.window_name, cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 
 

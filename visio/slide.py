@@ -19,7 +19,7 @@ class PPTToElements(object):
         self.target_w, self.target_h = external_cfg.size
         self.origin_x, self.origin_y = external_cfg.origin
         all_texts = self.texts(prs)
-        # print(all_texts)
+        print(all_texts)
 
     @staticmethod
     def parse_alignment(alignment):
@@ -204,75 +204,8 @@ class PPTToElements(object):
         return texts
 
 
-class LayeredVideo(VideoInput):
-    def __init__(self, cfg, layers):
-        super(LayeredVideo, self).__init__(cfg)
-        self.back = self.init_back()
-        _ = self.back.is_refreshed()
-        self._cache = self.back.float_render(None, None)
-        self._layers = layers
-
-    def init_back(self):
-        return StaticInput(self.cfg)
-
-    def float_render(self, _, __):
-        all_rois, all_keypoints = self.back.salient_regions()
-        events = [self.back.events]
-
-        for l in self._layers:
-            rois, keypoints = l.salient_regions()
-            events += l.events(rois, keypoints)
-            all_rois = {**all_rois, **rois}
-            all_keypoints = {**all_keypoints, **keypoints}
-
-        result, _, _ = self.back.float_render(None, None)
-
-        for l in self._layers:
-            l.update(events)
-            layer, alpha, float_compose = l.float_render(all_rois, all_keypoints)
-            if alpha is not None:
-                if float_compose is not None:
-                    result = float_compose#result * (1. - alpha) + float_compose
-                else:
-                    result = result * (1. - alpha) + layer * alpha
-            else:
-                result = layer
-
-        return result, None, None
-
-    def read(self):
-        is_refreshed = any(l.is_refreshed() for l in self._layers)
-        if is_refreshed:
-            self._cache, _, _ = self.float_render(None, None)
-        return True, self._cache
-
-
 def test_ppt_class(path):
     from visio.video import VideoDefaults
     cfg = VideoDefaults()
     s = PPTToElements(path, cfg)
 
-
-def test_layered_video():
-    cfg = VideoDefaults()
-    layers = [CV2WebCam()]
-    cap = LayeredVideo(cfg, layers)
-    det = MPSimpleFaceDetector()
-    #writer = AVStreamWriter()
-    with torch.no_grad():
-        while True:
-            st = time.time()
-            success, frame = cap.read()
-            if success:
-                # writer.write(frame)
-                frame.flags.writeable = False
-                #det.get_face_bbox(frame)
-                frame.flags.writeable = True
-                cap.show(frame)
-            print(round(1 / (time.time() - st)))
-            if cv2.waitKey(1) & 0xFF == 27:
-                cap.close()
-                # writer.close()
-                for l in layers:
-                    l.close()
-                break

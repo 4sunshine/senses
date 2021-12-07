@@ -154,7 +154,7 @@ class ColorConverterCUDA:
             max_x = min(max(0, max_x), dim_size - 1)
         if sqrt:
             gray = torch.sqrt(gray)  #[:, min_x: max_x + 1]
-
+            #gray = torch.pow(gray, 2)
         all_grad_points = torch.linspace(0, 255, (max_x - min_x + 1), dtype=torch.float32, device='cuda')
         left_border = torch.zeros((min_x, ), dtype=torch.float32, device='cuda')
         right_border = torch.ones((max(dim_size - max_x - 1, 0), ), dtype=torch.float32, device='cuda').mul_(255)

@@ -63,9 +63,9 @@ class GradientColorizeCUDAConfig:
     device = Device.cuda
     apply_x = True
     invert = False
-    sqrt = False
+    sqrt = True
     flip = False
-    colormap = 'tab20c'  #'plasma'#'nipy_spectral'
+    colormap = 'plasma'#'tab20c'  #'plasma'#'nipy_spectral'
     target = Region.Body  # Could be face, body, or None
 
 
@@ -179,6 +179,10 @@ class ChannelShift(EffectSource):
                 stream['rgb_buffer_cuda'][0, :, : -self.cfg.shift_x]
             stream['rgb_buffer_cuda'][2, :, : -self.cfg.shift_x] =\
                 stream['rgb_buffer_cuda'][2, :, self.cfg.shift_x:]
+            if stream['alpha_cuda'] is not None:
+                stream['alpha_cuda'] = torch.maximum(torch.roll(stream['alpha_cuda'], self.cfg.shift_x, dims=2),
+                                                     torch.roll(stream['alpha_cuda'], -self.cfg.shift_x, dims=2))
+            # stream['alpha_cuda'] = stream['alpha_cuda'][:, :, ]
 
         if self.cfg.apply_y:
             stream['rgb_buffer_cuda'][0, self.cfg.shift_y:, :] =\
