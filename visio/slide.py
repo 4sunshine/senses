@@ -2,6 +2,7 @@ import numpy as np
 from pptx import Presentation
 from pptx.util import Pt
 from omegaconf import OmegaConf
+import textwrap as tw
 
 from visio.video import VideoInput, AVStreamWriter, CV2WebCam, VideoDefaults, StaticInput, MPSimpleFaceDetector
 
@@ -18,17 +19,53 @@ class PPTToElements(object):
         self.width, self.height = prs.slide_width, prs.slide_height
         self.target_w, self.target_h = external_cfg.size
         self.origin_x, self.origin_y = external_cfg.origin
+        self.default_spacing = 1.5
+        self.bullet = '\u2192'
         all_texts = self.texts(prs)
         print(all_texts)
 
     @staticmethod
-    def parse_alignment(alignment):
+    def parse_alignment(alignment, default_align='l'):
+        if alignment is None:
+            alignment = default_align
         alignment = str(alignment).lower()
         if 'center' in alignment:
-            alignment = 'center'
-        else:
-            alignment = ''
+            alignment = 'ctr'
         return alignment
+
+    def place_texts_in_shape(self, shape_bbox, texts_data, spacing, need_bullet):
+        x_0, y_0, x_1, y_1 = shape_bbox
+        w, h = x_1 - x_0, y_1 - y_0
+        w = int(round(self.target_w * w / self.width))
+        h = int(round(self.target_h * h / self.height))
+        x_0 = int(round(self.target_w * x_0 / self.width))
+        y_0 = int(round(self.target_h * y_0 / self.height))
+        texts = texts_data['text']
+        anchors = texts_data['anchor']
+        aligns = texts_data['align']
+        aligns = [self.parse_alignment(a) for a in aligns]
+        font_sizes = texts_data['font_size']
+        font_sizes = [int(round(self.target_h * f_s / self.height)) for f_s in font_sizes]
+        n_letters = max([int(round(w / f_s)) for f_s in font_sizes])
+        if need_bullet:
+            texts = [tw.fill(' '.join([self.bullet, text]), n_letters) for text in texts]
+        else:
+            texts = [tw.fill(text, n_letters) for text in texts]
+        target_height = sum([int(round(f_s * spacing * len(text.splitlines())))
+                             for f_s, text in zip(font_sizes, texts)])
+        if 'b' in anchors:
+            texts_origin = y_0 + h - target_height
+        else:
+            texts_origin = y_0
+
+        result_data = {
+            'texts': texts,
+            'aligns': aligns,
+            'anchors': anchors,
+            'origin': (x_0, texts_origin),
+            'size': (w, target_height),
+        }
+        return result_data
 
     def texts(self, prs):
         def get_level_parameters():
@@ -88,7 +125,6 @@ class PPTToElements(object):
             #         # print(s.nvSpPr.shape_id)
             #         # print(s.nvSpPr.shape_name)
             # # raise
-
             master_defaults = dict()
             for p in master_slide.element.iterchildren():
                 if 'txStyles' in p.tag:
@@ -100,13 +136,9 @@ class PPTToElements(object):
                         for style in child.iterchildren():  ## ITERATE OVER LEVELS
                             align = style.get('algn')
                             for props in style.iterchildren():
-                                print('I AM HERE')
-                                print(props.tag)
-                                if ('defRPr' in props.tag):# and ('lvl' in props.tag):
-                                    print(props.tag)
+                                if 'defRPr' in props.tag:# and ('lvl' in props.tag):
                                     size = props.get('sz')
                                     if size is None:
-                                        print('CHU')
                                         size = self.DEFAULT_PT_SIZE
                                     def_font_size = Pt(int(size) / 100)
                                     cur_align = props.get('algn')
@@ -136,7 +168,7 @@ class PPTToElements(object):
 
             return master_defaults, mapping
 
-        texts = []
+        all_texts = []
         master_defaults, master_mapping = get_master_defaults(prs.slide_master)
 
         for slide in prs.slides:
@@ -154,54 +186,57 @@ class PPTToElements(object):
                 x_0, y_0 = shape.left, shape.top
                 s_w, s_h = shape.width, shape.height
 
-                # print(dir(shape))
+                shape_bbox = [x_0, y_0, x_0 + s_w, y_0 + s_h]
+
+                need_bullet = len(shape.text_frame.paragraphs) > 1
+
+                shape_texts = []
+                anchors = []
+                aligns = []
+                font_sizes = []
 
                 for paragraph in shape.text_frame.paragraphs:
                     spacing = paragraph.line_spacing
                     if spacing is None:
-                        spacing = 0  # TODO: CHECK DEFAULTS
+                        spacing = self.default_spacing  # TODO: CHECK DEFAULTS
                     align = paragraph.alignment
-
-                    # print(dir(paragraph))
-                    # print(paragraph._defRPr.xml)
-                    # raise
-
-                    # print(dir(paragraph))
-                    # print(paragraph.level)
-                    # print(align)
 
                     for run in paragraph.runs:
                         text = run.text
                         font_size = run.font.size
                         # print(text)
                         # print(dir(run))
+                        anchor = None
                         if font_size is None:
-                            print(defaults)
-                            print(master_defaults)
                             if len(defaults[shape.shape_id]['sizes']) > 0:
                                 font_size = defaults[shape.shape_id]['sizes'][paragraph.level]
+                                align = defaults[shape.shape_id]['aligns'][paragraph.level]
+                                anchor = defaults[shape.shape_id]['anchors'][paragraph.level]
                             else:
                                 font_size = master_defaults[master_mapping(shape.shape_id)]['sizes'][paragraph.level]
-                            print(font_size)
-                            print('Changed')
+                                align = master_defaults[master_mapping(shape.shape_id)]['aligns'][paragraph.level]
+                                anchor = master_defaults[master_mapping(shape.shape_id)]['anchors'][paragraph.level]
 
-                        text_w, text_h = s_w, font_size
-                        text_ox, text_oy = x_0, y_0
+                        shape_texts.append(text)
+                        anchors.append(anchor)
+                        aligns.append(align)
+                        font_sizes.append(font_size)
 
-                        y_0 += font_size + int(round(font_size * spacing))
-                        # TRY: color = run.font.color EXCEPT
-                        text_data = {
-                            'data': text,
-                            'size': (int(round(self.target_w * text_w / self.width)),
-                                     int(round(self.target_h * text_h / self.height))),
-                            'origin': (self.origin_x + int(round(self.target_w * text_ox / self.width)),
-                                       self.origin_y + int(round(self.target_h * text_oy / self.height))),
-                            'alignment': self.parse_alignment(align),  # TODO: LATER ALIGNMENT SHOULD BE INT CONST
-                        }
-                        slide_texts.append(OmegaConf.create(text_data))
-            texts.append(slide_texts)
+                shape_texts_data = {
+                    'text': shape_texts,
+                    'anchor': anchors,
+                    'align': aligns,
+                    'font_size': font_sizes,
+                }
 
-        return texts
+                formatted_shape_texts_data = self.place_texts_in_shape(shape_bbox, shape_texts_data,
+                                                                       spacing, need_bullet)  # TODO: FIX SPACING
+
+                slide_texts.append(formatted_shape_texts_data)
+
+            all_texts.append(slide_texts)
+
+        return all_texts
 
 
 def test_ppt_class(path):
