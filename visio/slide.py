@@ -1,8 +1,11 @@
+import os
+
 import numpy as np
 from pptx import Presentation
 from pptx.util import Pt
 from omegaconf import OmegaConf
 import textwrap as tw
+import tempfile
 
 from visio.video import VideoInput, AVStreamWriter, CV2WebCam, VideoDefaults, StaticInput, MPSimpleFaceDetector
 
@@ -21,8 +24,13 @@ class PPTToElements(object):
         self.origin_x, self.origin_y = external_cfg.origin
         self.default_spacing = 1.5
         self.bullet = '\u2192'
-        all_texts = self.texts(prs)
-        print(all_texts)
+        self.temp_mapping = dict()
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.all_texts = self.texts(prs)
+        self.all_videos = self.videos(prs)
+        print(self.all_texts)
+        print(self.all_videos)
+        self.close()
 
     @staticmethod
     def parse_alignment(alignment, default_align='l'):
@@ -66,6 +74,57 @@ class PPTToElements(object):
             'size': (w, target_height),
         }
         return result_data
+
+    def close(self):
+        self.temp_dir.cleanup()
+
+    def videos(self, prs):
+        all_videos = []
+        for i, slide in enumerate(prs.slides):
+            for k in slide.part.rels.keys():
+                print(dir(k))
+                print(k.rId)
+                print(k.target_ref)
+                if str(k.target_ref).endswith('.mp4'):
+                    target_path = os.path.join(self.temp_dir.name, f'{k.rId}.mp4')
+                    with open(target_path, 'wb') as f:
+                        f.write(k.target_part.blob)
+                    self.temp_mapping[str(k.rId)] = target_path
+
+            slide_videos = []
+            slide_bboxes = []
+            for shape in slide.shapes:
+                # print(shape.shape_type)  # TODO: CHECK LATER FOR A VIDEO/PIC SUPPORT
+                shape_type = str(shape.shape_type).lower()
+
+                if 'media' in shape_type:
+                    x_0, y_0 = shape.left, shape.top
+                    s_w, s_h = shape.width, shape.height
+                    shape_bbox = [x_0, y_0, x_0 + s_w, y_0 + s_h]
+
+                    for i in shape._pic.nvPicPr.nvPr.iterchildren():
+                        if 'videoFile' in i.tag:
+                            for k, v in i.items():
+                                if 'link' in k:
+                                    video_reference = v
+                                    slide_videos.append(self.temp_mapping[str(v)])
+
+                                    shape_bbox[0] = int(round(self.target_w * shape_bbox[0] / self.width))
+                                    shape_bbox[2] = int(round(self.target_w * shape_bbox[2] / self.width))
+
+                                    shape_bbox[1] = int(round(self.target_h * shape_bbox[1] / self.height))
+                                    shape_bbox[3] = int(round(self.target_h * shape_bbox[3] / self.height))
+
+                                    slide_bboxes.append(shape_bbox)
+
+            video_data = {
+                'videos': slide_videos,
+                'bboxes': slide_bboxes,
+            }
+            all_videos.append(video_data)
+
+        return all_videos
+
 
     def texts(self, prs):
         def get_level_parameters():
@@ -171,14 +230,15 @@ class PPTToElements(object):
         all_texts = []
         master_defaults, master_mapping = get_master_defaults(prs.slide_master)
 
-        for slide in prs.slides:
+        for i, slide in enumerate(prs.slides):
             defaults = get_defaults(slide.shapes, slide.slide_layout.placeholders)
+
             slide_texts = []
             for shape in slide.shapes:
+                # print(shape.shape_type)  # TODO: CHECK LATER FOR A VIDEO/PIC SUPPORT
                 if not shape.has_text_frame:
                     continue
                 #print(shape.shape_id)
-                # print(shape.shape_type) # TODO: CHECK LATER FOR A VIDEO/PIC SUPPORT
                 # print(dir(shape))
                 # print(dir(shape._sp))
                 # print(shape._sp._get_xfrm_attr('type'))
