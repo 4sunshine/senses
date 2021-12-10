@@ -7,7 +7,10 @@ from omegaconf import OmegaConf
 import textwrap as tw
 import tempfile
 
+from PIL import Image, ImageDraw, ImageFont
+
 from visio.video import VideoInput, AVStreamWriter, CV2WebCam, VideoDefaults, StaticInput, MPSimpleFaceDetector
+from visio.text import draw_text_image
 
 import torch
 import time
@@ -28,9 +31,29 @@ class PPTToElements(object):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.all_texts = self.texts(prs)
         self.all_videos = self.videos(prs)
+        self.slides = self.draw_slides(self.all_texts)
         print(self.all_texts)
         print(self.all_videos)
         self.close()
+
+    def draw_slides(self, all_texts):
+        slides = []
+        for i, slide_texts in enumerate(all_texts):
+            slide = Image.new(mode='RGBA', size=(self.target_w, self.target_h))
+            for shape in slide_texts:
+                texts = '\n'.join(shape['texts'])
+                size = shape['size']
+                alignment = shape['aligns'][0]
+                origin = shape['origin']
+                x_0, y_0 = origin
+                w, h = size
+                bbox = (x_0, y_0, x_0 + w, y_0 + h)
+                rendered_text, _ = draw_text_image(size, texts, alignment,
+                                                   text_color='#00000000', text_back_color='#000000ff',
+                                                   spacing=1)
+                slide.paste(rendered_text, box=bbox, mask=rendered_text)
+            slides.append(slide)
+        return slides
 
     @staticmethod
     def parse_alignment(alignment, default_align='l'):
@@ -54,9 +77,12 @@ class PPTToElements(object):
         aligns = [self.parse_alignment(a) for a in aligns]
         font_sizes = texts_data['font_size']
         font_sizes = [int(round(self.target_h * f_s / self.height)) for f_s in font_sizes]
-        n_letters = max([int(round(w / f_s)) for f_s in font_sizes])
+        n_letters = max([int(round(1.5 * w / f_s)) for f_s in font_sizes])
+        #TW = tw.TextWrapper(width=n_letters, initial_indent=f"{self.bullet} ")
         if need_bullet:
-            texts = [tw.fill(' '.join([self.bullet, text]), n_letters) for text in texts]
+            texts = ['+ '.join(text.splitlines()) for text in texts]
+            texts = [tw.fill(text, n_letters, initial_indent=f"{self.bullet} ") for text in texts]
+            texts = ['\n    '.join(text.splitlines()) for text in texts]
         else:
             texts = [tw.fill(text, n_letters) for text in texts]
         target_height = sum([int(round(f_s * spacing * len(text.splitlines())))
@@ -72,6 +98,7 @@ class PPTToElements(object):
             'anchors': anchors,
             'origin': (x_0, texts_origin),
             'size': (w, target_height),
+            'type': texts_data['type'],
         }
         return result_data
 
@@ -124,7 +151,6 @@ class PPTToElements(object):
             all_videos.append(video_data)
 
         return all_videos
-
 
     def texts(self, prs):
         def get_level_parameters():
@@ -287,6 +313,7 @@ class PPTToElements(object):
                     'anchor': anchors,
                     'align': aligns,
                     'font_size': font_sizes,
+                    'type': master_mapping(int(shape.shape_id)),
                 }
 
                 formatted_shape_texts_data = self.place_texts_in_shape(shape_bbox, shape_texts_data,

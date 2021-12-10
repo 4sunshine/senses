@@ -21,10 +21,10 @@ def get_font_size_for_target_size(texts, target_size,
 
 def x_anchor_by_alignment(w, alignment):
     """w: TARGET IMAGE WIDTH"""
-    if alignment == 'L':
+    if alignment == 'l':
         x = 0
         anchor = 'ls'
-    elif alignment == 'R':
+    elif alignment == 'r':
         x = w
         anchor = 'rs'
     else:
