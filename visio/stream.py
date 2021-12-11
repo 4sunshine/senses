@@ -1,3 +1,6 @@
+import PIL.Image
+import numpy as np
+
 from visio.source import *
 from dataclasses import dataclass
 from typing import Union
@@ -13,20 +16,12 @@ class Stream(Enum):
     Video = 0
     Presentation = 1
     Text = 2
-    Image = 3
+    Images = 3
     WebCam = 4
     Evolution = 5
 
 
-class StreamReader(object):
-    def __init__(self, cfg=None):
-        self.cfg = self.default_config() if cfg is None else cfg
-        self._tick = -1
-
-    def tick(self):
-        self._tick += 1
-        return self._tick
-
+class StreamReader(Source):
     def default_config(self):
         return None
 
@@ -35,6 +30,9 @@ class StreamReader(object):
 
     def read_stream(self, stream):
         stream['new_ready'] = False
+
+    def __len__(self):
+        return 1
 
     def close(self):
         pass
@@ -131,42 +129,52 @@ class Evolution(StreamReader):
 
 
 @dataclass
-class TextsConfig:
+class ImagesCUDAConfig:
     input_id = 0
-    solution = Stream.Evolution
+    solution = Stream.Images
     type = SourceType.stream
-    url = ''
+    url = []
     device = Device.cuda
     name = 'evolution'
     size = (1280, 720)
+    images = []
     initial_state = 'white'  # LATER CONSIDER OTHER STATES ('white', 'noise', 'black')
 
 
-class Texts(StreamReader):
+class ImagesCUDA(StreamReader):
     def __init__(self, cfg=None):
-        super().__init__(cfg)
+        super(ImagesCUDA, self).__init__(cfg)
+        self.images = self.init_images(cfg.images or cfg.url)
+
+    def init_source(self, images):
+        # LATER CHECK EQUAL IMAGES SIZES
+        buffer = []
+        for img in images:
+            if isinstance(img, torch.Tensor):
+                assert img.shape[-2:] == self.cfg.size[::-1]
+                buffer.append(img.cuda())
+            elif isinstance(img, PIL.Image.Image):
+                assert img.size == self.cfg.size
+                buffer.append(self.rgb_cpu_to_cuda(np.array(img)))
+            elif isinstance(img, np.ndarray):
+                assert img.shape[:2] == self.cfg.size[::-1]
+                buffer.append(self.rgb_cpu_to_cuda(img))
+            elif isinstance(img, str):
+                img = cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB)
+                assert img.shape[:2] == self.cfg.size[::-1]
+                buffer.append(self.rgb_cpu_to_cuda(img))
+            else:
+                print(f'invalid img {img}')
+                continue
+        if buffer:
+            buffer = torch.stack(buffer)
+        return buffer
 
     def default_config(self):
-        return TextsConfig()
+        return ImagesCUDAConfig()
 
-    def initial_state(self):
-        if self.cfg.device == Device.cuda:
-            if self.cfg.initial_state == 'white':
-                state = torch.ones((3,) + self.cfg.size[::-1], dtype=torch.float32, device='cuda')
-            elif self.cfg.initial_state == 'noise':
-                state = torch.rand((3,) + self.cfg.size[::-1], dtype=torch.float32, device='cuda')
-            else:
-                state = torch.zeros((3,) + self.cfg.size[::-1], dtype=torch.float32, device='cuda')
-        else:
-            state = None
-        return state, None
-
-    def read_stream(self, stream):
-        if self.tick() == 0:
-            stream['rgb_buffer_cuda'], stream['alpha_cuda'] = self.initial_state()
-        stream['new_ready'] = True
-        # if self.cfg.device == DeviceType.cuda:
-        #     stream['cuda_buffer_gpu'] = to_tensor(stream['rgb_buffer_cpu']) / 255.
+    def __len__(self):
+        return len(self.images)
 
 
 STREAM_MAPPING = {

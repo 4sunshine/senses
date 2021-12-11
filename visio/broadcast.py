@@ -3,7 +3,7 @@ import torch
 import time
 import subprocess
 
-from visio.source import Device
+from visio.source import Device, Source
 from typing import Union
 from dataclasses import dataclass
 from enum import Enum
@@ -15,9 +15,9 @@ class BroadcastType(Enum):
     fake_cam = 2
 
 
-class Broadcast(object):
+class Broadcast(Source):
     def __init__(self, layers, cfg=None):
-        self.cfg = self.default_config() if cfg is None else cfg
+        super(Broadcast, self).__init__(cfg)
         self.layers = self.init_layers(layers)
 
     def default_config(self):
@@ -70,7 +70,7 @@ class Broadcast(object):
                     result = layer * alpha
             else:
                 result = layer * alpha + result * (1 - alpha)
-        return result.mul(255).byte().cpu().permute(1, 2, 0).numpy()
+        return self.rgb_cuda_to_cpu(result)  # result.mul(255).byte().cpu().permute(1, 2, 0).numpy()
 
 
 @dataclass

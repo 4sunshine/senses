@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from torchvision.transforms.functional import to_tensor
 
 
 __all__ = ['SourceType', 'Device', 'Enum', 'Source', 'SOURCE_MAPPING', 'Composition']
@@ -43,6 +44,15 @@ class Source(object):
     def default_solution(self):
         return self
 
+    def rgb_cpu_to_cuda(self, image):
+        return to_tensor(image) / 255.
+
+    def rgb_cuda_to_cpu(self, image):
+        if len(image.shape) == 3:
+            return image.mul(255).byte().cpu().permute(1, 2, 0).numpy()
+        else:
+            return image[0].mul(255).byte().cpu().permute(1, 2, 0).numpy()
+
     def tick(self):
         self._tick += 1
         return self._tick
@@ -50,7 +60,7 @@ class Source(object):
     def default_config(self):
         return SourceDefaultConfig(name='default', type=SourceType.dummy, device=Device.cpu, url=None)
 
-    def init_source(self):
+    def init_source(self, data):
         pass
 
     def process_stream(self, stream):
