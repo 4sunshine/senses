@@ -37,8 +37,8 @@ class ColorGridCUDAConfig:
 
 
 class ColorGridCUDA(EffectSource):
-    def __init__(self, cfg=None):
-        super(ColorGridCUDA, self).__init__(cfg)
+    def __init__(self, cfg=None, data=None):
+        super(ColorGridCUDA, self).__init__(cfg, data)
         self.color = torch.tensor(self.cfg.color, dtype=torch.float32, device='cuda') / 255.
 
     def default_config(self):
@@ -70,8 +70,8 @@ class GradientColorizeCUDAConfig:
 
 
 class GradientColorizeCUDA(EffectSource):
-    def __init__(self, cfg=None):
-        super(GradientColorizeCUDA, self).__init__(cfg)
+    def __init__(self, cfg=None, data=None):
+        super(GradientColorizeCUDA, self).__init__(cfg, data)
         self.color_model = ColorConverterCUDA(self.cfg.colormap)
 
     def default_config(self):
@@ -115,9 +115,9 @@ class RandomLinesCUDAConfig:
 
 
 class RandomLinesCUDA(EffectSource):
-    def __init__(self, cfg=None):
+    def __init__(self, cfg=None, data=None):
         """COLOR IS THE SAME AT THE MOMENT"""
-        super(RandomLinesCUDA, self).__init__(cfg)
+        super(RandomLinesCUDA, self).__init__(cfg, data)
         if self.cfg.apply_x:
             self._index_x = torch.randint(0, 1, (self.cfg.count_x,), dtype=torch.int64)
         if self.cfg.apply_y:
@@ -164,9 +164,6 @@ class ChannelShiftConfig:
 
 
 class ChannelShift(EffectSource):
-    def __init__(self, cfg=None):
-        super().__init__(cfg)
-
     def default_config(self):
         return ChannelShiftConfig()
 

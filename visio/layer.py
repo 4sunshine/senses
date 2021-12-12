@@ -7,40 +7,7 @@ from typing import Union
 from dataclasses import dataclass
 
 from visio.factory import SourceFactory
-from visio.source import Device
-
-
-class BidirectionalIterator(object):
-    """https://stackoverflow.com/a/2777223"""
-    def __init__(self, collection):
-        self.collection = collection
-        self._index = 0
-
-    def next(self):
-        try:
-            result = self.collection[self._index]
-            self._index += 1
-        except IndexError:
-            raise StopIteration
-        return result
-
-    def prev(self):
-        self._index -= 1
-        if self._index < 0:
-            raise StopIteration
-        return self.collection[self._index]
-
-    def get(self, item=None):
-        if isinstance(item, str):
-            return getattr(self.collection[self.id()], item)
-        else:
-            return self.collection[self.id()]
-
-    def id(self):
-        return self._index - 1
-
-    def __iter__(self):
-        return self
+from visio.source import Device, BidirectionalIterator
 
 
 @dataclass

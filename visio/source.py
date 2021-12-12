@@ -3,7 +3,40 @@ from enum import Enum
 from torchvision.transforms.functional import to_tensor
 
 
-__all__ = ['SourceType', 'Device', 'Enum', 'Source', 'SOURCE_MAPPING', 'Composition']
+__all__ = ['SourceType', 'Device', 'Enum', 'Source', 'SOURCE_MAPPING', 'Composition', 'BidirectionalIterator']
+
+
+class BidirectionalIterator(object):
+    """https://stackoverflow.com/a/2777223"""
+    def __init__(self, collection):
+        self.collection = collection
+        self._index = 0
+
+    def next(self):
+        try:
+            result = self.collection[self._index]
+            self._index += 1
+        except IndexError:
+            raise StopIteration
+        return result
+
+    def prev(self):
+        self._index -= 1
+        if self._index < 0:
+            raise StopIteration
+        return self.collection[self._index]
+
+    def get(self, item=None):
+        if isinstance(item, str):
+            return getattr(self.collection[self.id()], item)
+        else:
+            return self.collection[self.id()]
+
+    def id(self):
+        return self._index - 1
+
+    def __iter__(self):
+        return self
 
 
 class SourceType(Enum):
@@ -36,9 +69,9 @@ class SourceDefaultConfig:
 
 
 class Source(object):
-    def __init__(self, cfg=None):
+    def __init__(self, cfg=None, data=None):
         self.cfg = self.default_config() if cfg is None else cfg
-        self.init_source()
+        self.data = self.init_source(data)
         self._tick = -1
 
     def default_solution(self):
@@ -61,7 +94,7 @@ class Source(object):
         return SourceDefaultConfig(name='default', type=SourceType.dummy, device=Device.cpu, url=None)
 
     def init_source(self, data):
-        pass
+        return data
 
     def process_stream(self, stream):
         pass
@@ -69,18 +102,18 @@ class Source(object):
     def close(self):
         pass
 
+    def __len__(self):
+        return 1
+
 
 class Composition(Source):
-    def __init__(self, sources):
+    def __init__(self, sources, data=None):
         assert isinstance(sources, list)
         configs = [s.cfg for s in sources]
         types = [cfg.type for cfg in configs]
         assert types.count(types[0]) == len(types)
-        super(Composition, self).__init__(cfg=configs)
+        super(Composition, self).__init__(cfg=configs, data=data)
         self.sources = sources
-
-    def init_source(self):
-        pass
 
     def process_stream(self, stream):
         for s in self.sources:

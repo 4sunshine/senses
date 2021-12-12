@@ -17,8 +17,8 @@ class Region(Enum):
 
 
 class RegionSource(Source):
-    def __init__(self, cfg=None):
-        super(RegionSource, self).__init__(cfg)
+    def __init__(self, cfg=None, data=None):
+        super(RegionSource, self).__init__(cfg, data)
 
     def process_stream(self, stream):
         pass
@@ -45,8 +45,8 @@ class MPFaceConfig:
 
 
 class MPFace(RegionSource):
-    def __init__(self, cfg=None):
-        super(MPFace, self).__init__(cfg)
+    def __init__(self, cfg=None, data=None):
+        super(MPFace, self).__init__(cfg, data)
         self.model = MPSimpleFaceDetector(self.cfg.model_type,
                                           self.cfg.det_conf,
                                           self.cfg.max_detections)
@@ -83,8 +83,8 @@ class MPHandsConfig:
 
 
 class MPHands(RegionSource):
-    def __init__(self, cfg=None):
-        super(MPHands, self).__init__(cfg)
+    def __init__(self, cfg=None, data=None):
+        super(MPHands, self).__init__(cfg, data)
         self.model = MPHandsDetector(
             self.cfg.model_complexity,
             self.cfg.det_conf,

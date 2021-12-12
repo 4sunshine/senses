@@ -31,9 +31,6 @@ class StreamReader(Source):
     def read_stream(self, stream):
         stream['new_ready'] = False
 
-    def __len__(self):
-        return 1
-
     def close(self):
         pass
 
@@ -51,8 +48,8 @@ class WebCamCV2Config:
 
 
 class WebCamCV2(StreamReader):
-    def __init__(self, cfg=None):
-        super().__init__(cfg)
+    def __init__(self, cfg=None, data=None):
+        super().__init__(cfg, data)
         self.cap = cv2.VideoCapture(self.cfg.input_id)
         self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.size[0])
@@ -102,9 +99,6 @@ class EvolutionConfig:
 
 
 class Evolution(StreamReader):
-    def __init__(self, cfg=None):
-        super().__init__(cfg)
-
     def default_config(self):
         return EvolutionConfig()
 
@@ -137,14 +131,13 @@ class ImagesCUDAConfig:
     device = Device.cuda
     name = 'evolution'
     size = (1280, 720)
-    images = []
     initial_state = 'white'  # LATER CONSIDER OTHER STATES ('white', 'noise', 'black')
 
 
 class ImagesCUDA(StreamReader):
-    def __init__(self, cfg=None):
-        super(ImagesCUDA, self).__init__(cfg)
-        self.images = self.init_images(cfg.images or cfg.url)
+    def __init__(self, cfg=None, data=None):
+        data = data or cfg.url
+        super(ImagesCUDA, self).__init__(cfg, data)
 
     def init_source(self, images):
         # LATER CHECK EQUAL IMAGES SIZES
@@ -170,11 +163,14 @@ class ImagesCUDA(StreamReader):
             buffer = torch.stack(buffer)
         return buffer
 
+    def process_stream(self, stream):
+        stream['rgb_buffer_cuda'] = self.images[self.current_id]
+
     def default_config(self):
         return ImagesCUDAConfig()
 
     def __len__(self):
-        return len(self.images)
+        return len(self.data)
 
 
 STREAM_MAPPING = {

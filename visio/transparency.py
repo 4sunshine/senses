@@ -34,9 +34,9 @@ class RVMAlphaCUDAConfig:
 
 
 class RVMAlphaCUDA(AlphaSource):
-    def __init__(self, cfg):
-        super(RVMAlphaCUDA, self).__init__(cfg)
-        self.model = torch.jit.load(self.cfg.url).cuda().eval()
+    def __init__(self, cfg=None, data=None):
+        super(RVMAlphaCUDA, self).__init__(cfg, data)
+        self.model = torch.jit.load(self.cfg.url).cuda().eval()  # ALSO USE EXTENDED INTERFACE FOR MODELS LATER
         # self.model.backbone_scale = 1 / 4
         self._rec = [None] * 4
         self._downsample_ratio = self.cfg.downsample_ratio
