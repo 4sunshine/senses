@@ -16,15 +16,8 @@ class BroadcastType(Enum):
 
 
 class Broadcast(Source):
-    def __init__(self, layers, cfg=None):
-        super(Broadcast, self).__init__(cfg)
-        self.layers = self.init_layers(layers)
-
     def default_config(self):
         return None
-
-    def init_layers(self, layers):
-        return layers
 
     def close(self):
         for layer in self.layers:
@@ -59,7 +52,7 @@ class Broadcast(Source):
 
     def layers_process_cuda(self):
         result = None
-        for l in self.layers:
+        for l in self.data:
             layer, alpha = l.render_cuda()
             # self.events += shared_events
             # result = layer * alpha
@@ -85,8 +78,8 @@ class BroadcastWindowConfig:
 
 
 class BroadcastWindow(Broadcast):
-    def __init__(self, layers, cfg=None):
-        super(BroadcastWindow, self).__init__(layers, cfg)
+    def __init__(self, cfg=None, data=None):
+        super(BroadcastWindow, self).__init__(cfg, data)
         self.window_name = self.cfg.window_name
         cv2.namedWindow(self.window_name)
         self._x, self._y = self.cfg.window_position
@@ -120,8 +113,8 @@ class AVBroadcastConfig:
 
 
 class AVBroadcast(BroadcastWindow):
-    def __init__(self, layers, cfg=None):
-        super(AVBroadcast, self).__init__(layers, cfg)
+    def __init__(self, cfg=None, data=None):
+        super(AVBroadcast, self).__init__(cfg, data)
         command = ['ffmpeg',
                    '-y',
                    # INPUT VIDEO STREAM
