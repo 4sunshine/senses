@@ -1,23 +1,10 @@
-import cv2.cv2
+import cv2
 
 from visio.source import *
 from dataclasses import dataclass
 
 
-__all__ = ['Event', 'Keypress', 'EVENT_MAPPING']
-
-
-class Event(Enum):
-    started = 0
-    finished = 1
-    appear = 2
-    fade_out = 3
-    Keypress = 4
-    keypoint = 5
-    openhand = 6
-    finger_at = 7
-    face_at = 8
-    next_element = 9
+__all__ = ['Keypress', 'EVENT_MAPPING']
 
 
 class EventSource(Source):
@@ -39,8 +26,8 @@ class SpaceButtonConfig:
 
 class Keypress(EventSource):
     def process_stream(self, stream):
-        if cv2.waitKey(1) & 0xFF == self.cfg.ff_code:
-            print('LOL')
+        k = cv2.waitKey(1)
+        print(k)
 
     def default_config(self):
         return SpaceButtonConfig()

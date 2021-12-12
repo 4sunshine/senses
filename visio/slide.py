@@ -49,9 +49,10 @@ class PPTToElements(object):
                 w, h = size
                 bbox = (x_0, y_0, x_0 + w, y_0 + h)
                 rendered_text, _ = draw_text_image(size, texts, alignment,
-                                                   text_color='#00000000', text_back_color='#000000ff',
+                                                   text_color='#ffffffff', text_back_color='#ff000000',
                                                    spacing=1)
                 slide.paste(rendered_text, box=bbox, mask=rendered_text)
+            slide.save(f'{i}.png')
             slides.append(slide)
         return slides
 
@@ -330,4 +331,5 @@ def test_ppt_class(path):
     from visio.video import VideoDefaults
     cfg = VideoDefaults()
     s = PPTToElements(path, cfg)
+    return s
 

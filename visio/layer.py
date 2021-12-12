@@ -102,7 +102,8 @@ class MediaLayer(object):
     def init_source(self, cfg):
         if cfg:
             configs = BidirectionalIterator(cfg)
-            source_cfg = configs.next()
+            source_cfg = configs.get()
+            configs.next()
             return self.SF.init_source(source_cfg), configs
         else:
             return self.SF.empty_source(), BidirectionalIterator([])

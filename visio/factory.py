@@ -29,9 +29,12 @@ class SourceFactory:
         )
         return all_sources
 
+    # CHECK DEFAULTS  # TODO! EXPAND WITH DATA AND EVENTS
+    def init_source(self, cfg):
+        config = cfg.config
+        data = cfg.data
+        events = cfg.events
 
-    # CHECK DEFAULTS
-    def init_source(self, config):
         if config is None:
             return self.empty_source()
         elif isinstance(config, list):
@@ -49,7 +52,7 @@ class SourceFactory:
             try:
                 assert len(config) == 2
                 source_type, solution = config
-                return self.all_sources[source_type][solution](None)
+                return self.all_sources[source_type][solution](None, data)
             except Exception as e:
                 print(f'Incorrect config:')
                 print(config)
@@ -57,7 +60,7 @@ class SourceFactory:
                 print(e)
                 return self.empty_source()
         else:
-            return self.all_sources[config.type][config.solution](config)
+            return self.all_sources[config.type][config.solution](config, data)
 
     def empty_source(self):
         return self.all_sources[SourceType.dummy][SourceType.dummy]()

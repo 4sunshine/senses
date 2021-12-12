@@ -160,14 +160,25 @@ class ImagesCUDA(StreamReader):
                 print(f'invalid img {img}')
                 continue
         if buffer:
-            buffer = torch.stack(buffer)
+            buffer = torch.stack(buffer).cuda()
         return buffer
-
-    def process_stream(self, stream):
-        stream['rgb_buffer_cuda'] = self.images[self.current_id]
 
     def default_config(self):
         return ImagesCUDAConfig()
+
+    def read_stream(self, stream):
+        if self.new_data_ready:
+            if self.cfg.device == Device.cuda:
+                data = self.data.get()
+                stream['rgb_buffer_cuda'] = data[:3]
+                if len(data) == 4:
+                    stream['alpha_cuda'] = data[3:, :, :]
+            else:
+                stream['rgb_buffer_cpu'] = self.data.get()
+                stream['new_ready'] = True
+            self.new_data_ready = False
+        else:
+            stream['new_ready'] = False
 
     def __len__(self):
         return len(self.data)
@@ -176,5 +187,6 @@ class ImagesCUDA(StreamReader):
 STREAM_MAPPING = {
     Stream.WebCam: WebCamCV2,
     Stream.Evolution: Evolution,
+    Stream.Images: ImagesCUDA,
 }
 

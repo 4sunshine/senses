@@ -1,9 +1,19 @@
 from dataclasses import dataclass
 from enum import Enum
+
+import torch
 from torchvision.transforms.functional import to_tensor
 
 
-__all__ = ['SourceType', 'Device', 'Enum', 'Source', 'SOURCE_MAPPING', 'Composition', 'BidirectionalIterator']
+__all__ = ['SourceType', 'Device', 'Enum', 'Source', 'SOURCE_MAPPING', 'Composition', 'BidirectionalIterator', 'Event',
+           'SourceInterface']
+
+
+@dataclass
+class SourceInterface:
+    config: None
+    data: None
+    events: None
 
 
 class BidirectionalIterator(object):
@@ -33,10 +43,13 @@ class BidirectionalIterator(object):
             return self.collection[self.id()]
 
     def id(self):
-        return self._index - 1
+        return self._index #- 1
 
     def __iter__(self):
         return self
+
+    def __len__(self):
+        return len(self.collection)
 
 
 class SourceType(Enum):
@@ -54,6 +67,21 @@ class Device(Enum):
     cuda = 11
 
 
+class Event(Enum):
+    started = 0
+    finished = 1
+    appear = 2
+    fade_out = 3
+    Keypress = 4
+    keypoint = 5
+    openhand = 6
+    finger_at = 7
+    face_at = 8
+    next_element = 9
+    KeyPressRight = 10
+    KeyPressLeft = 11
+
+
 @dataclass
 class SourceDefaultConfig:
     name: str
@@ -69,16 +97,25 @@ class SourceDefaultConfig:
 
 
 class Source(object):
-    def __init__(self, cfg=None, data=None):
+    def __init__(self, cfg=None, data=None, events=None):
         self.cfg = self.default_config() if cfg is None else cfg
-        self.data = self.init_source(data)
+        if data is None:
+            data = []
+        self.data = BidirectionalIterator(self.init_source(data))  #.next()
+        # self.data.next()
+        self.events = self.init_events(events)
+        self.new_data_ready = True
+        #self.waiting_events = self.cfg.events or None
         self._tick = -1
+
+    def init_events(self, events):
+        return events
 
     def default_solution(self):
         return self
 
     def rgb_cpu_to_cuda(self, image):
-        return to_tensor(image) / 255.
+        return torch.from_numpy(image).type(torch.float32).permute(2, 0, 1).cuda() / 255. #o_tensor(image) / 255.
 
     def rgb_cuda_to_cpu(self, image):
         if len(image.shape) == 3:
@@ -102,8 +139,22 @@ class Source(object):
     def close(self):
         pass
 
+    def check_global_events(self, global_events):
+        if Event.KeyPressRight in global_events:
+            self.next()
+        if Event.KeyPressLeft in global_events:
+            self.prev()
+
+    def next(self):
+        self.data.next()
+        self.new_data_ready = True
+
+    def prev(self):
+        self.data.prev()
+        self.new_data_ready = True
+
     def __len__(self):
-        return 1
+        return 1  # TODO: CHECK IF LEN(DATA) CAN BE USED
 
 
 class Composition(Source):

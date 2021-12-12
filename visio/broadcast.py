@@ -20,7 +20,7 @@ class Broadcast(Source):
         return None
 
     def close(self):
-        for layer in self.layers:
+        for layer in self.data:
             layer.close()
 
     def send(self, image):
@@ -80,6 +80,7 @@ class BroadcastWindowConfig:
 class BroadcastWindow(Broadcast):
     def __init__(self, cfg=None, data=None):
         super(BroadcastWindow, self).__init__(cfg, data)
+        self.data = self.data.collection
         self.window_name = self.cfg.window_name
         cv2.namedWindow(self.window_name)
         self._x, self._y = self.cfg.window_position
