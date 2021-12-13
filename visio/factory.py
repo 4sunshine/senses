@@ -40,7 +40,7 @@ class SourceFactory:
         elif isinstance(config, list):
             try:
                 assert not isinstance(config[0], list)
-                sources = [self.init_source(cfg) for cfg in config]
+                sources = [self.init_source(c) for c in config]
                 return Composition(sources)
             except Exception as e:
                 print(f'Incorrect config:')

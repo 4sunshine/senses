@@ -27,7 +27,27 @@ class SpaceButtonConfig:
 class Keypress(EventSource):
     def process_stream(self, stream):
         k = cv2.waitKey(1)
-        print(k)
+        e = None
+        if k == 81:
+            e = Event.KeyPressLeft
+        elif k == 83:
+            e = Event.KeyPressRight
+        elif k == 27:
+            e = Event.Escape
+        if e:
+            stream.update(e)
+
+    def update_events(self, events):
+        k = cv2.waitKey(1)
+        e = None
+        if k == 81:
+            e = Event.KeyPressLeft
+        elif k == 83:
+            e = Event.KeyPressRight
+        elif k == 27:
+            e = Event.Escape
+        if e:
+            events.add(e)
 
     def default_config(self):
         return SpaceButtonConfig()

@@ -3,7 +3,8 @@ import torch
 import time
 import subprocess
 
-from visio.source import Device, Source
+from visio.source import Device, Source, Event
+from visio.event import Keypress
 from typing import Union
 from dataclasses import dataclass
 from enum import Enum
@@ -33,17 +34,21 @@ class Broadcast(Source):
         else:
             self.broadcast_cpu()
 
+    def listen_events(self, events):
+        pass
+
+    def send_events(self, events):
+        self.s_events.update_events(events)
+
     def broadcast_cuda(self):
         while True:
             start = time.time()  # LATER ADD TIMING OPT
             result = self.layers_process_cuda()
             self.send(result)
+            need_break = self.handle_events()
             print((1 / (time.time() - start)))
-            #
-            # k = cv2.waitKey(1)
-            # print(k)
 
-            if cv2.waitKey(1) & 0xFF == 27:
+            if need_break:
                 self.close()
                 break
 
@@ -65,6 +70,16 @@ class Broadcast(Source):
                 result = layer * alpha + result * (1 - alpha)
         return self.rgb_cuda_to_cpu(result)  # result.mul(255).byte().cpu().permute(1, 2, 0).numpy()
 
+    def handle_events(self):
+        events = set()
+        self.send_events(events)
+        for l in self.data:
+            l.send_events(events)
+        for l in self.data:
+            l.listen_events(events)
+        self.listen_events(events)
+        return Event.Escape in events
+
 
 @dataclass
 class BroadcastWindowConfig:
@@ -80,8 +95,9 @@ class BroadcastWindowConfig:
 class BroadcastWindow(Broadcast):
     def __init__(self, cfg=None, data=None):
         super(BroadcastWindow, self).__init__(cfg, data)
-        self.data = self.data.collection
-        self.window_name = self.cfg.window_name
+        self.s_events = Keypress()
+        self.data = list(self.data.collection)
+        self.window_name = str(self.cfg.window_name)
         cv2.namedWindow(self.window_name)
         self._x, self._y = self.cfg.window_position
         cv2.moveWindow(self.window_name, self._x, self._y)

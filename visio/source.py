@@ -23,24 +23,23 @@ class BidirectionalIterator(object):
         self._index = 0
 
     def next(self):
-        try:
-            result = self.collection[self._index]
-            self._index += 1
-        except IndexError:
-            raise StopIteration
+        result = self.collection[self._index]
+        self._index += 1
+        if self._index > len(self) - 1:
+            self._index = len(self) - 1
         return result
 
     def prev(self):
         self._index -= 1
         if self._index < 0:
-            raise StopIteration
+            self._index = 0
         return self.collection[self._index]
 
     def get(self, item=None):
         if isinstance(item, str):
             return getattr(self.collection[self.id()], item)
         else:
-            return self.collection[self.id()]
+            return self.collection[max(0, min(self.id(), len(self)))]
 
     def id(self):
         return self._index #- 1
@@ -80,6 +79,13 @@ class Event(Enum):
     next_element = 9
     KeyPressRight = 10
     KeyPressLeft = 11
+    Escape = 12
+
+
+@dataclass
+class WaitingEvents:
+    next_data = Event.KeyPressRight
+    prev_data = Event.KeyPressLeft
 
 
 @dataclass
@@ -103,7 +109,8 @@ class Source(object):
             data = []
         self.data = BidirectionalIterator(self.init_source(data))  #.next()
         # self.data.next()
-        self.events = self.init_events(events)
+        self.l_events = self.init_events(events['l_events'] if events else None)
+        self.s_events = self.init_events(events['s_events'] if events else None)
         self.new_data_ready = True
         #self.waiting_events = self.cfg.events or None
         self._tick = -1
@@ -139,11 +146,15 @@ class Source(object):
     def close(self):
         pass
 
-    def check_global_events(self, global_events):
-        if Event.KeyPressRight in global_events:
-            self.next()
-        if Event.KeyPressLeft in global_events:
-            self.prev()
+    def listen_events(self, events):
+        if self.l_events:
+            if self.l_events.next_data in events:
+                self.next()
+            elif self.l_events.prev_data in events:
+                self.prev()
+
+    def send_events(self, events):
+        pass
 
     def next(self):
         self.data.next()
@@ -160,6 +171,8 @@ class Source(object):
 class Composition(Source):
     def __init__(self, sources, data=None):
         assert isinstance(sources, list)
+        print('COMP_HERE')
+        print(sources)
         configs = [s.cfg for s in sources]
         types = [cfg.type for cfg in configs]
         assert types.count(types[0]) == len(types)

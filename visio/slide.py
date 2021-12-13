@@ -49,8 +49,8 @@ class PPTToElements(object):
                 w, h = size
                 bbox = (x_0, y_0, x_0 + w, y_0 + h)
                 rendered_text, _ = draw_text_image(size, texts, alignment,
-                                                   text_color='#ffffffff', text_back_color='#ff000000',
-                                                   spacing=1)
+                                                   text_color='#ffffff00', text_back_color='#ffffffff',
+                                                   spacing=1.5)
                 slide.paste(rendered_text, box=bbox, mask=rendered_text)
             slide.save(f'{i}.png')
             slides.append(slide)

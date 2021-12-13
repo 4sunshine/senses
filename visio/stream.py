@@ -166,8 +166,15 @@ class ImagesCUDA(StreamReader):
     def default_config(self):
         return ImagesCUDAConfig()
 
+    def listen_events(self, events):
+        if Event.KeyPressLeft in events:
+            self.prev()
+        elif Event.KeyPressRight in events:
+            self.next()
+
     def read_stream(self, stream):
         if self.new_data_ready:
+            stream['new_ready'] = True
             if self.cfg.device == Device.cuda:
                 data = self.data.get()
                 stream['rgb_buffer_cuda'] = data[:3]
@@ -175,7 +182,6 @@ class ImagesCUDA(StreamReader):
                     stream['alpha_cuda'] = data[3:, :, :]
             else:
                 stream['rgb_buffer_cpu'] = self.data.get()
-                stream['new_ready'] = True
             self.new_data_ready = False
         else:
             stream['new_ready'] = False

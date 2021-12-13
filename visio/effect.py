@@ -31,9 +31,9 @@ class ColorGridCUDAConfig:
     threshold = 0.05
     apply_x = True
     apply_y = True
-    step_x = 40 #4
-    step_y = 40 #4
-    color = (0, 255, 0)
+    step_x = 4
+    step_y = 4
+    color = (0, 0, 0)
 
 
 class ColorGridCUDA(EffectSource):

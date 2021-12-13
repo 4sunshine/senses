@@ -96,6 +96,12 @@ class MediaLayer(object):
         self.event_source.close()
         self.region_source.close()
 
+    def send_events(self, events):
+        self.stream_source.send_events(events)
+
+    def listen_events(self, events):
+        self.stream_source.listen_events(events)
+
     def tick(self):
         return self._stream['tick']
 
