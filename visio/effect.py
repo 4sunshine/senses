@@ -5,6 +5,7 @@ from visio.region import Region
 
 import numpy as np
 import torch
+import kornia
 
 
 __all__ = ['ColorGridCUDA', 'ColorGridCUDAConfig', 'EFFECT_MAPPING']
@@ -20,6 +21,7 @@ class Effect(Enum):
     Colorize = 1
     RandomLines = 2
     ChannelShift = 3
+    Ghost = 4
 
 
 @dataclass
@@ -54,6 +56,72 @@ class ColorGridCUDA(EffectSource):
         if self.cfg.apply_y:
             stream['rgb_buffer_cuda'][:3, ::self.cfg.step_y, :] = self.color[:, None, None]
 
+@dataclass
+class GhostCUDAConfig:
+    solution = Effect.Grid
+    type = SourceType.effect
+    name = 'color_grid'
+    device = Device.cuda
+    threshold = 0.05
+    apply_x = True
+    apply_y = True
+    step_x = 4
+    step_y = 4
+    color = (255, 255, 255)
+
+
+class GhostCUDA(EffectSource):
+    def __init__(self, cfg=None, data=None):
+        print('KEK')
+        super(GhostCUDA, self).__init__(cfg, data)
+        self.color = torch.tensor(self.cfg.color, dtype=torch.float32, device='cuda') / 255.
+        filter = [[2, 4, 5, 4, 2],
+                  [4, 9, 12, 9, 4],
+                  [5, 12, 15, 12, 5],
+                  [4, 9, 12, 9, 4],
+                  [2, 4, 5, 4, 2]]
+        weight_smooth = (torch.tensor(filter, dtype=torch.float32, device='cuda') / 159.).unsqueeze_(0).repeat(3, 1, 1).unsqueeze_(0)
+        self.smooth = torch.nn.Conv2d(3, 1, 5, bias=False, dtype=torch.float32, padding=2, device='cuda').requires_grad_(False)
+        self.smooth.weight = torch.nn.Parameter(weight_smooth, requires_grad=False)
+
+        canny_x = [[1, 0, -1],
+                   [2, 0, -2],
+                   [1, 0, -1]]
+        weight_cx = (torch.tensor(canny_x, dtype=torch.float32, device='cuda')).unsqueeze_(0).repeat(1, 1, 1).unsqueeze_(0)
+
+        canny_y = [[1, 2, 1],
+                   [0, 0, 0],
+                   [-1, -2, -1]]
+        weight_cy = (torch.tensor(canny_y, dtype=torch.float32, device='cuda')).unsqueeze_(0).repeat(1, 1, 1).unsqueeze_(0)
+
+        weight_canny = torch.cat([weight_cx, weight_cy], dim=0)
+        print(weight_canny.shape)
+
+        self.canny = torch.nn.Conv2d(1, 2, 3, bias=False, dtype=torch.float32, padding=1, device='cuda').requires_grad_(False)
+        self.canny.weight = torch.nn.Parameter(weight_canny, requires_grad=False)
+        #
+        # self.c_y = torch.nn.Conv2d(3, 1, 3, bias=False, dtype=torch.float32, padding=1, device='cuda').requires_grad_(False)
+        # self.c_y.weight = weight_cy
+        #
+
+
+
+    def default_config(self):
+        return GhostCUDAConfig()
+
+    def process_stream(self, stream):
+        # image = stream['rgb_buffer_cuda']
+        # if len(image.shape) > 2:
+        img = self.smooth(stream['rgb_buffer_cuda'].unsqueeze(0))
+        img = torch.sum(self.canny(img).pow_(2), dim=1, keepdim=True).pow_(0.5)
+        stream['alpha_cuda'] = img[0] * stream['alpha_cuda']
+        # if not stream['new_ready']:
+        #     return
+        # if self.cfg.apply_x:
+        #     stream['rgb_buffer_cuda'][:3, :, ::self.cfg.step_x] = self.color[:, None, None]
+        # if self.cfg.apply_y:
+        #     stream['rgb_buffer_cuda'][:3, ::self.cfg.step_y, :] = self.color[:, None, None]
+
 
 @dataclass
 class GradientColorizeCUDAConfig:
@@ -65,7 +133,7 @@ class GradientColorizeCUDAConfig:
     invert = False
     sqrt = True
     flip = False
-    colormap = 'plasma'#'tab20c'  #'plasma'#'nipy_spectral'
+    colormap = 'nipy_spectral'  #'plasma'#'tab20c'  #'plasma'#'nipy_spectral'
     target = Region.Body  # Could be face, body, or None
 
 
@@ -111,7 +179,7 @@ class RandomLinesCUDAConfig:
     apply_y = True
     count_y = 245
     same = True
-    change_every = 1
+    change_every = 20
 
 
 class RandomLinesCUDA(EffectSource):
@@ -193,4 +261,5 @@ EFFECT_MAPPING = {
     Effect.Colorize: GradientColorizeCUDA,
     Effect.RandomLines: RandomLinesCUDA,
     Effect.ChannelShift: ChannelShift,
+    Effect.Ghost: GhostCUDA,
 }
