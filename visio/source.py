@@ -147,11 +147,12 @@ class Source(object):
         pass
 
     def listen_events(self, events):
-        if self.l_events:
-            if self.l_events.next_data in events:
-                self.next()
-            elif self.l_events.prev_data in events:
-                self.prev()
+        pass
+        # if self.l_events:
+        #     if self.l_events.next_data in events:
+        #         self.next()
+        #     elif self.l_events.prev_data in events:
+        #         self.prev()
 
     def send_events(self, events):
         pass

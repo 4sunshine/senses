@@ -72,7 +72,6 @@ class GhostCUDAConfig:
 
 class GhostCUDA(EffectSource):
     def __init__(self, cfg=None, data=None):
-        print('KEK')
         super(GhostCUDA, self).__init__(cfg, data)
         self.color = torch.tensor(self.cfg.color, dtype=torch.float32, device='cuda') / 255.
         filter = [[2, 4, 5, 4, 2],
@@ -80,8 +79,8 @@ class GhostCUDA(EffectSource):
                   [5, 12, 15, 12, 5],
                   [4, 9, 12, 9, 4],
                   [2, 4, 5, 4, 2]]
-        weight_smooth = (torch.tensor(filter, dtype=torch.float32, device='cuda') / 159.).unsqueeze_(0).repeat(3, 1, 1).unsqueeze_(0)
-        self.smooth = torch.nn.Conv2d(3, 1, 5, bias=False, dtype=torch.float32, padding=2, device='cuda').requires_grad_(False)
+        weight_smooth = (torch.tensor(filter, dtype=torch.float32, device='cuda') / 159.).unsqueeze_(0).repeat(1, 1, 1).unsqueeze_(0)
+        self.smooth = torch.nn.Conv2d(1, 1, 5, bias=False, dtype=torch.float32, padding=2, device='cuda').requires_grad_(False)
         self.smooth.weight = torch.nn.Parameter(weight_smooth, requires_grad=False)
 
         canny_x = [[1, 0, -1],
@@ -104,7 +103,14 @@ class GhostCUDA(EffectSource):
         # self.c_y.weight = weight_cy
         #
 
-
+    @staticmethod
+    def rgb_to_gray(img):
+        """https://github.com/pytorch/vision/blob/main/torchvision/transforms/functional_tensor.py"""
+        r, g, b = img.unbind(dim=-3)
+        # This implementation closely follows the TF one:
+        # https://github.com/tensorflow/tensorflow/blob/v2.3.0/tensorflow/python/ops/image_ops_impl.py#L2105-L2138
+        l_img = (0.2989 * r + 0.587 * g + 0.114 * b).to(img.dtype)
+        return l_img.unsqueeze(dim=-3)
 
     def default_config(self):
         return GhostCUDAConfig()
@@ -112,8 +118,9 @@ class GhostCUDA(EffectSource):
     def process_stream(self, stream):
         # image = stream['rgb_buffer_cuda']
         # if len(image.shape) > 2:
-        img = self.smooth(stream['rgb_buffer_cuda'].unsqueeze(0))
-        img = torch.sum(self.canny(img).pow_(2), dim=1, keepdim=True).pow_(0.5)
+        gray = self.rgb_to_gray(stream['rgb_buffer_cuda'])
+        img = self.smooth(gray.unsqueeze(0))
+        img = torch.norm(self.canny(img), dim=1, keepdim=True)  #torch.sum(self.canny(img).pow_(2), dim=1, keepdim=True).pow_(0.5)
         stream['alpha_cuda'] = img[0] * stream['alpha_cuda']
         # if not stream['new_ready']:
         #     return
@@ -179,7 +186,7 @@ class RandomLinesCUDAConfig:
     apply_y = True
     count_y = 245
     same = True
-    change_every = 20
+    change_every = 2
 
 
 class RandomLinesCUDA(EffectSource):

@@ -124,26 +124,4 @@ class MediaLayer(object):
             return self.SF.empty_source()
 
 
-# def test_layers():
-#     stream_cfg = VideoDefaults()
-#     transp_cfg = TransparencyConfig()
-#     region_cfg = RegionConfig()
-#     effect_cfg = EffectConfig()
-#     print(str(SourceType.transparency))
-#     effect_cfg.color = (0, 255, 0)
-#     effect_cfg.step_x = 20
-#     effect_cfg.step_y = 20
-#     print(effect_cfg)
-#     event_cfg = None  # WAIT FOR TO ITERATE OVER
-#     cfg = LayerConfig(stream=[stream_cfg],
-#                       transparency=[transp_cfg],
-#                       region=[region_cfg],
-#                       effect=[effect_cfg],
-#                       event=event_cfg)
-#     layer_1 = MediaDataLayer_EXP(cfg)
-#     out_cfg = StreamOutputConfig()
-#     broad = StreamOutput(out_cfg, [layer_1])
-#     broad.stream()
-#     # layer_1._do_stream()
-
 

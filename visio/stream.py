@@ -112,7 +112,11 @@ class Evolution(StreamReader):
                 state = torch.zeros((3,) + self.cfg.size[::-1], dtype=torch.float32, device='cuda')
         else:
             state = None
-        return state, None
+        if state is not None:
+            alpha = torch.ones(state.shape[1:], dtype=torch.float32, device='cuda')
+        else:
+            alpha = None
+        return state, alpha
 
     def read_stream(self, stream):
         if self.tick() == 0:
@@ -153,9 +157,9 @@ class ImagesCUDA(StreamReader):
                 assert img.shape[:2] == self.cfg.size[::-1]
                 buffer.append(self.rgb_cpu_to_cuda(img))
             elif isinstance(img, str):
-                img = cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB)
-                assert img.shape[:2] == self.cfg.size[::-1]
-                buffer.append(self.rgb_cpu_to_cuda(img))
+                img = PIL.Image.open(img).convert('RGBA')  #cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB)
+                assert img.size == self.cfg.size
+                buffer.append(self.rgb_cpu_to_cuda(np.array(img)))
             else:
                 print(f'invalid img {img}')
                 continue
