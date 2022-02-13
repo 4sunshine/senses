@@ -52,7 +52,7 @@ class PPTToElements(object):
                                                    text_color='#ffffff00', text_back_color='#ffffffff',
                                                    spacing=1.5)
                 slide.paste(rendered_text, box=bbox, mask=rendered_text)
-            slide.save(f'{i}.png')
+            # slide.save(f'{i}.png')
             slides.append(slide)
         return slides
 

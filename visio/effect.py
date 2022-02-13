@@ -22,6 +22,7 @@ class Effect(Enum):
     RandomLines = 2
     ChannelShift = 3
     Ghost = 4
+    RollShift = 5
 
 
 @dataclass
@@ -147,6 +148,56 @@ class GradientColorizeCUDAConfig:
 class GradientColorizeCUDA(EffectSource):
     def __init__(self, cfg=None, data=None):
         super(GradientColorizeCUDA, self).__init__(cfg, data)
+        self.color_model = ColorConverterCUDA(self.cfg.colormap)
+
+    def default_config(self):
+        return GradientColorizeCUDAConfig()
+
+    def process_stream(self, stream):
+        if not stream['new_ready']:
+            return
+        image = stream['rgb_buffer_cuda'].clone()
+        if self.cfg.target == Region.Body:
+            bbox = stream['rois'].get('person_region', None)
+        elif self.cfg.target == Region.Face:
+            bbox = stream['rois'].get('face', None)
+        else:
+            bbox = None
+        if bbox is None or np.all(bbox < 0):
+            endpoints = None
+        else:
+            if self.cfg.apply_x:
+                endpoints = bbox[0], bbox[2]
+            else:
+                endpoints = bbox[1], bbox[3]
+
+        stream['rgb_buffer_cuda'] = self.color_model.process_grad_grayscale(image, endpoints, self.cfg.apply_x,
+                                                                            self.cfg.invert, self.cfg.sqrt,
+                                                                            self.cfg.flip)
+
+
+@dataclass
+class RollShiftCUDAConfig:
+    solution = Effect.RollShift
+    type = SourceType.effect
+    name = 'colorize'
+    device = Device.cuda
+    width = 1280
+    height = 720
+    apply_x = True
+    invert = False
+    sqrt = True
+    flip = False
+    colormap = 'nipy_spectral'  #'plasma'#'tab20c'  #'plasma'#'nipy_spectral'
+    target = Region.Body  # Could be face, body, or None
+
+
+class RollShiftCUDA(EffectSource):
+    def __init__(self, cfg=None, data=None):
+        super(RollShiftCUDA, self).__init__(cfg, data)
+        x = torch.arange(self.cfg.width, dtype=torch.int32)
+        y = torch.arange(self.cfg.height, dtype=torch.int32)
+        self.index_x, self.index_y = torch.meshgrid(x, y, indexing='xy')
         self.color_model = ColorConverterCUDA(self.cfg.colormap)
 
     def default_config(self):
